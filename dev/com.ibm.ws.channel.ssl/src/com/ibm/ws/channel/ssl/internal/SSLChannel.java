@@ -26,12 +26,13 @@ import javax.net.ssl.SSLEngineResult.Status;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLSessionContext;
 
+import org.osgi.framework.Constants;
+
 import com.ibm.websphere.channelfw.ChainData;
 import com.ibm.websphere.channelfw.ChannelData;
 import com.ibm.websphere.channelfw.FlowType;
 import com.ibm.websphere.ras.Tr;
 import com.ibm.websphere.ras.TraceComponent;
-import com.ibm.websphere.ssl.Constants;
 import com.ibm.websphere.ssl.JSSEHelper;
 import com.ibm.websphere.ssl.JSSEProvider;
 import com.ibm.websphere.ssl.SSLConfig;
@@ -93,7 +94,7 @@ public class SSLChannel implements InboundChannel, OutboundChannel, Discriminato
      * PI52696 - Timeout value for which the SSL closing handshake loop will attempt to complete final handshake
      * write before giving up.
      */
-    private int timeoutValueInSSLClosingHandshake = 30;
+    private int timeoutValueInSSLClosingHandshake = 1;
 
     private static Boolean useH2ProtocolAttribute = null;
 
