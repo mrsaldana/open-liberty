@@ -215,7 +215,7 @@ public class HttpChannelConfig {
     /** Tracks headers that have been configured erroneously **/
     protected HashSet<String> configuredHeadersErrorSet = null;
 
-    protected boolean useNetty = Boolean.TRUE;
+    protected boolean useNetty = Boolean.FALSE;
 
     /**
      * Constructor for an HTTP channel config object.
@@ -233,7 +233,6 @@ public class HttpChannelConfig {
      */
 
     public HttpChannelConfig(Map<String, Object> config) {
-        System.out.println("MSP: properties set");
         parseConfig("default", config);
     }
 
@@ -278,7 +277,9 @@ public class HttpChannelConfig {
      * @param cc
      */
     protected void parseConfig(String name, Map<String, Object> config) {
-        Tr.entry(tc, "parseConfig: " + name);
+        if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
+            Tr.entry(tc, "parseConfig: " + name);
+        }
 
         Map<String, Object> propsIn = config;
 
@@ -635,7 +636,9 @@ public class HttpChannelConfig {
         initSameSiteCookiesPatterns();
         parseHeaders(props);
 
-        Tr.exit(tc, "parseConfig");
+        if (TraceComponent.isAnyTracingEnabled() && tc.isEntryEnabled()) {
+            Tr.exit(tc, "parseConfig");
+        }
 
     }
 
@@ -678,7 +681,10 @@ public class HttpChannelConfig {
 
         if (Objects.nonNull(option)) {
             this.bKeepAliveEnabled = convertBoolean(option);
-            Tr.event(tc, "Config: KeepAliveEnabled is " + isKeepAliveEnabled());
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: KeepAliveEnabled is " + isKeepAliveEnabled());
+            }
+
         }
     }
 
@@ -695,11 +701,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.maxPersistRequest = minLimit(convertInteger(option), HttpConfigConstants.MIN_PERSIST_REQ);
-                Tr.event(tc, "Config: Max persistent requests is " + getMaximumPersistentRequests());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Max persistent requests is " + getMaximumPersistentRequests());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseMaxPersist", "1");
-                Tr.event(tc, "Config: Invalid max persistent requests; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid max persistent requests; " + option);
+                }
 
             }
         }
@@ -714,7 +724,9 @@ public class HttpChannelConfig {
     protected void parseOutgoingVersion(Object option) {
         if ("1.0".equals(option)) {
             this.outgoingHttpVersion = VersionValues.V10;
-            Tr.event(tc, "Config: Outgoing version is " + getOutgoingVersion().getName());
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: Outgoing version is " + getOutgoingVersion().getName());
+            }
 
         }
     }
@@ -728,7 +740,9 @@ public class HttpChannelConfig {
     protected void parseBufferType(Object option) {
         if (Objects.nonNull(option)) {
             this.bDirectBuffers = convertBoolean(option);
-            Tr.event(tc, "Config: use direct buffers is " + isDirectBufferType());
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: use direct buffers is " + isDirectBufferType());
+            }
 
         }
     }
@@ -743,14 +757,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.outgoingHdrBuffSize = rangeLimit(convertInteger(option), HttpConfigConstants.MIN_BUFFER_SIZE, HttpConfigConstants.MAX_BUFFER_SIZE);
-
-                Tr.event(tc, "Config: Outgoing hdr buffer size is " + getOutgoingHdrBufferSize());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Outgoing hdr buffer size is " + getOutgoingHdrBufferSize());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseOutgoingBufferSize", "1");
-
-                Tr.event(tc, "Config: Invalid outgoing header buffer size; " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid outgoing header buffer size; " + option);
+                }
             }
         }
     }
@@ -765,14 +780,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.incomingHdrBuffSize = rangeLimit(convertInteger(option), HttpConfigConstants.MIN_BUFFER_SIZE, HttpConfigConstants.MAX_BUFFER_SIZE);
-
-                Tr.event(tc, "Config: Incoming hdr buffer size is " + getIncomingHdrBufferSize());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Incoming hdr buffer size is " + getIncomingHdrBufferSize());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseIncomingHdrBufferSize", "1");
-
-                Tr.event(tc, "Config: Invalid incoming hdr buffer size of " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid incoming hdr buffer size of " + option);
+                }
             }
         }
     }
@@ -787,13 +802,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.incomingBodyBuffSize = rangeLimit(convertInteger(option), HttpConfigConstants.MIN_BUFFER_SIZE, HttpConfigConstants.MAX_BUFFER_SIZE);
-
-                Tr.event(tc, "Config: Incoming body buffer size is " + getIncomingBodyBufferSize());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Incoming body buffer size is " + getIncomingBodyBufferSize());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseIncomingBodyBufferSize", "1");
-
-                Tr.event(tc, "Config: Invalid incoming body buffer size; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid incoming body buffer size; " + option);
+                }
             }
         }
 
@@ -809,11 +825,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.persistTimeout = TIMEOUT_MODIFIER * minLimit(convertInteger(option), HttpConfigConstants.MIN_TIMEOUT);
-                Tr.event(tc, "Config: Persist timeout is " + getPersistTimeout());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Persist timeout is " + getPersistTimeout());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parsePersistTimeout", "1");
-                Tr.event(tc, "Config: Invalid persist timeout; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid persist timeout; " + option);
+                }
 
             }
         }
@@ -829,11 +848,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.readTimeout = TIMEOUT_MODIFIER * minLimit(convertInteger(option), HttpConfigConstants.MIN_TIMEOUT);
-                Tr.event(tc, "Config: Read timeout is " + getReadTimeout());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Read timeout is " + getReadTimeout());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseReadTimeout", "1");
-                Tr.event(tc, "Config: Invalid read timeout; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid read timeout; " + option);
+                }
 
             }
         }
@@ -849,11 +871,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.writeTimeout = TIMEOUT_MODIFIER * minLimit(convertInteger(option), HttpConfigConstants.MIN_TIMEOUT);
-                Tr.event(tc, "Config: Write timeout is " + getWriteTimeout());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Write timeout is " + getWriteTimeout());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseWriteTimeout", "1");
-                Tr.event(tc, "Config: Invalid write timeout; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid write timeout; " + option);
+                }
 
             }
         }
@@ -863,11 +889,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.http2ConnectionIdleTimeout = TIMEOUT_MODIFIER * minLimit(convertInteger(option), HttpConfigConstants.MIN_TIMEOUT);
-                Tr.event(tc, "Config: HTTP/2 Connection idle timeout is " + getH2ConnectionIdleTimeout());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: HTTP/2 Connection idle timeout is " + getH2ConnectionIdleTimeout());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseH2ConnectionIdleTimeout", "1");
-                Tr.event(tc, "Config: Invalid HTTP/2 connection idle timeout; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid HTTP/2 connection idle timeout; " + option);
+                }
             }
 
         }
@@ -877,11 +907,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.http2MaxConcurrentStreams = convertInteger(option);
-                Tr.event(tc, "Config: HTTP/2 Max Concurrent Streams is " + getH2MaxConcurrentStreams());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: HTTP/2 Max Concurrent Streams is " + getH2MaxConcurrentStreams());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseH2MaxConcurrentStreams", "1");
-                Tr.event(tc, "Config: Invalid HTTP/2 Max Concurrent Streams; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid HTTP/2 Max Concurrent Streams; " + option);
+                }
 
             }
         }
@@ -963,13 +997,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.http2MaxFrameSize = rangeLimit(convertInteger(option), HttpConfigConstants.MIN_LIMIT_FRAME_SIZE, HttpConfigConstants.MAX_LIMIT_FRAME_SIZE);
-
-                Tr.event(tc, "Config: HTTP/2 Max Frame Size is " + getH2MaxFrameSize());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: HTTP/2 Max Frame Size is " + getH2MaxFrameSize());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseH2MaxFrameSize", "1");
-                Tr.event(tc, "Config: Invalid HTTP/2 Frame Size; " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid HTTP/2 Frame Size; " + option);
+                }
             }
         }
     }
@@ -977,7 +1012,9 @@ public class HttpChannelConfig {
     protected void parseH2SettingsInitialWindowSize(Object option) {
         if (Objects.nonNull(option)) {
             this.http2SettingsInitialWindowSize = convertInteger(option);
-            Tr.event(tc, "Config: HTTP/2 Settings Initial Window Size is " + getH2SettingsInitialWindowSize());
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: HTTP/2 Settings Initial Window Size is " + getH2SettingsInitialWindowSize());
+            }
 
         }
     }
@@ -985,7 +1022,9 @@ public class HttpChannelConfig {
     protected void parseH2ConnectionWindowSize(Object option) {
         if (Objects.nonNull(option)) {
             this.http2ConnectionWindowSize = convertInteger(option);
-            Tr.event(tc, "Config: HTTP/2 Connection Window Size is " + getH2ConnectionWindowSize());
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: HTTP/2 Connection Window Size is " + getH2ConnectionWindowSize());
+            }
 
         }
     }
@@ -993,22 +1032,25 @@ public class HttpChannelConfig {
     protected void parseH2LimitWindowUpdateFrames(Object option) {
         if (Objects.nonNull(option)) {
             this.http2LimitWindowUpdateFrames = convertBoolean(option);
-            Tr.event(tc, "Config: HTTP/2 Limit Window Update Frames is " + getH2LimitWindowUpdateFrames());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: HTTP/2 Limit Window Update Frames is " + getH2LimitWindowUpdateFrames());
+            }
         }
-
     }
 
     protected void parseH2ConnCloseTimeout(Object option) {
         if (Objects.nonNull(option)) {
             try {
                 this.http2ConnectionCloseTimeout = convertLong(option);
-                Tr.event(tc, "Config: H2 Connection Close timeout is " + getH2ConnCloseTimeout());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: H2 Connection Close timeout is " + getH2ConnCloseTimeout());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseH2ConnCloseTimeout", "1");
-                Tr.event(tc, "Config: Invalid H2 Connection Close Timeout of " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid H2 Connection Close Timeout of " + option);
+                }
             }
         }
     }
@@ -1022,14 +1064,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.byteCacheSize = rangeLimit(convertInteger(option), HttpConfigConstants.MIN_BYTE_CACHE_SIZE, HttpConfigConstants.MAX_BYTE_CACHE_SIZE);
-
-                Tr.event(tc, "Config: byte cache size is " + getByteCacheSize());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: byte cache size is " + getByteCacheSize());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseByteCacheSize", "1");
-
-                Tr.event(tc, "Config: Invalid bytecache setting of " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid bytecache setting of " + option);
+                }
             }
         }
     }
@@ -1043,8 +1085,9 @@ public class HttpChannelConfig {
     protected void parseDelayedExtract(Object option) {
         if (Objects.nonNull(option)) {
             this.bExtractValue = convertBoolean(option);
-            Tr.event(tc, "Config: header value extraction is " + shouldExtractValue());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: header value extraction is " + shouldExtractValue());
+            }
         }
     }
 
@@ -1057,7 +1100,9 @@ public class HttpChannelConfig {
     protected void parseBinaryTransport(Object option) {
         if (Objects.nonNull(option)) {
             this.bBinaryTransport = convertBoolean(option);
-            Tr.event(tc, "Config: binary transport is " + isBinaryTransportEnabled());
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: binary transport is " + isBinaryTransportEnabled());
+            }
         }
     }
 
@@ -1075,8 +1120,9 @@ public class HttpChannelConfig {
                 }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseLimitFieldSize", "1");
-                Tr.event(tc, "Config: Invaild max field size setting of " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invaild max field size setting of " + option);
+                }
             }
         }
     }
@@ -1091,12 +1137,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.limitNumHeaders = rangeLimit(convertInteger(option), HttpConfigConstants.MIN_LIMIT_NUMHEADERS, HttpConfigConstants.MAX_LIMIT_NUMHEADERS);
-                Tr.event(tc, "Config: Num hdrs limit is " + getLimitOnNumberOfHeaders());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Num hdrs limit is " + getLimitOnNumberOfHeaders());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseLimitNumberHeaders", "1");
-                Tr.event(tc, "Config: Invalid number of headers limit; " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid number of headers limit; " + option);
+                }
             }
         }
     }
@@ -1116,12 +1164,14 @@ public class HttpChannelConfig {
                 } else {
                     this.limitNumResponses = rangeLimit(size, 1, HttpConfigConstants.MAX_LIMIT_NUMRESPONSES);
                 }
-                Tr.event(tc, "Config: Num responses limit is " + getLimitOnNumberOfResponses());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Num responses limit is " + getLimitOnNumberOfResponses());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseLimitNumberResponses", "1");
-                Tr.event(tc, "Config: Invalid max number of responses; " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid max number of responses; " + option);
+                }
             }
         }
     }
@@ -1136,10 +1186,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.limitMessageSize = convertLong(option);
-                Tr.event(tc, "Config: Message size limit is " + getMessageSizeLimit());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Message size limit is " + getMessageSizeLimit());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseLimitMessageSize", "1");
-                Tr.event(tc, "Config: Invalid message size limit; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid message size limit; " + option);
+                }
             }
         }
     }
@@ -1167,8 +1221,9 @@ public class HttpChannelConfig {
             if (aLog != null) {
                 this.accessLogger = aLog;
             }
-            MSP.log("access log format is set to: " + accessLogger.get().getFormat());
-            Tr.debug(tc, "Config: using logging service", accessLogger);
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: using logging service", accessLogger);
+            }
         }
     }
 
@@ -1186,12 +1241,11 @@ public class HttpChannelConfig {
                 this.sameSiteCookies = new HashMap<String, String>();
                 this.sameSiteErrorCookies = new HashSet<String>();
                 this.sameSiteStringPatterns = new HashMap<String, String>();
-
-                Tr.event(tc, "Http Channel Config: SameSite configuration has been enabled");
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Channel Config: SameSite configuration has been enabled");
+                }
             }
         }
-
     }
 
     /**
@@ -1202,48 +1256,43 @@ public class HttpChannelConfig {
      */
     protected void parseCookiesSameSiteLax(Object option) {
         if (Objects.nonNull(option) && this.useSameSiteOptions) {
-
             if (option instanceof String[]) {
                 String[] cookies = (String[]) option;
                 for (String s : cookies) {
-
                     addSameSiteAttribute(s, HttpConfigConstants.SameSite.LAX);
-
                 }
             }
-            Tr.event(tc, "Http Channel Config: SameSite Lax configuration parsed.");
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Http Channel Config: SameSite Lax configuration parsed.");
+            }
         }
 
     }
 
     protected void parseCookiesSameSiteNone(Object option) {
         if (Objects.nonNull(option) && this.useSameSiteOptions) {
-
             if (option instanceof String[]) {
                 String[] cookies = (String[]) option;
                 for (String s : cookies) {
-
                     addSameSiteAttribute(s, HttpConfigConstants.SameSite.NONE);
-
                 }
-                Tr.event(tc, "Http Channel Config: SameSite None configuration parsed.");
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Channel Config: SameSite None configuration parsed.");
+                }
             }
-
         }
     }
 
     protected void parseCookiesSameSiteStrict(Object option) {
         if (Objects.nonNull(option) && this.useSameSiteOptions) {
-
             if (option instanceof String[]) {
                 String[] cookies = (String[]) option;
                 for (String s : cookies) {
-
                     addSameSiteAttribute(s, HttpConfigConstants.SameSite.STRICT);
-
                 }
-                Tr.event(tc, "Http Channel Config: SameSite Strict configuration parsed.");
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Channel Config: SameSite Strict configuration parsed.");
+                }
             }
         }
     }
@@ -1289,7 +1338,9 @@ public class HttpChannelConfig {
                     if (!this.sameSiteStringPatterns.containsKey(name)) {
                         this.sameSiteStringPatterns.put(name, sameSiteAttribute.getName());
                     } else {
-                        Tr.event(tc, "The duplicate pattern: " + name + " was not added again to the: " + sameSiteAttribute.getName() + " list.");
+                        if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                            Tr.event(tc, "The duplicate pattern: " + name + " was not added again to the: " + sameSiteAttribute.getName() + " list.");
+                        }
                     }
                 }
             }
@@ -1314,7 +1365,9 @@ public class HttpChannelConfig {
                     if (!this.sameSiteCookies.containsKey(name)) {
                         this.sameSiteCookies.put(name, sameSiteAttribute.getName());
                     } else {
-                        Tr.event(tc, "The duplicate cookieName: " + name + " was not added again to the: " + sameSiteAttribute.getName() + " list.");
+                        if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                            Tr.event(tc, "The duplicate cookieName: " + name + " was not added again to the: " + sameSiteAttribute.getName() + " list.");
+                        }
 
                     }
                 }
@@ -1376,49 +1429,51 @@ public class HttpChannelConfig {
                     this.sameSitePatterns.put(entry.getKey(), entry.getValue());
                 }
             }
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                //If tracing is enabled, print out the state of these maps.
+                Set<String> laxCookies = new HashSet<String>();
+                Set<String> noneCookies = new HashSet<String>();
+                Set<String> strictCookies = new HashSet<String>();
 
-            //If tracing is enabled, print out the state of these maps.
-            Set<String> laxCookies = new HashSet<String>();
-            Set<String> noneCookies = new HashSet<String>();
-            Set<String> strictCookies = new HashSet<String>();
-
-            StringBuilder sb = new StringBuilder();
-            sb.append("Http Channel Config: SameSite configuration complete. The following values are set:\n");
-            for (String key : this.sameSiteCookies.keySet()) {
-                if (HttpConfigConstants.SameSite.LAX.getName().equalsIgnoreCase(this.sameSiteCookies.get(key))) {
-                    laxCookies.add(key);
-                }
-                if (HttpConfigConstants.SameSite.NONE.getName().equalsIgnoreCase(this.sameSiteCookies.get(key))) {
-                    noneCookies.add(key);
-                }
-                if (HttpConfigConstants.SameSite.STRICT.getName().equalsIgnoreCase(this.sameSiteCookies.get(key))) {
-                    strictCookies.add(key);
-                }
-            }
-            //This is only defined when there are patterns, ensure the list has been initialized
-            if (this.sameSitePatterns != null) {
-                for (Pattern key : this.sameSitePatterns.keySet()) {
-
-                    if (HttpConfigConstants.SameSite.LAX.getName().equalsIgnoreCase(this.sameSitePatterns.get(key))) {
-                        laxCookies.add(key.toString());
+                StringBuilder sb = new StringBuilder();
+                sb.append("Http Channel Config: SameSite configuration complete. The following values are set:\n");
+                for (String key : this.sameSiteCookies.keySet()) {
+                    if (HttpConfigConstants.SameSite.LAX.getName().equalsIgnoreCase(this.sameSiteCookies.get(key))) {
+                        laxCookies.add(key);
                     }
-                    if (HttpConfigConstants.SameSite.NONE.getName().equalsIgnoreCase(this.sameSitePatterns.get(key))) {
-                        noneCookies.add(key.toString());
+                    if (HttpConfigConstants.SameSite.NONE.getName().equalsIgnoreCase(this.sameSiteCookies.get(key))) {
+                        noneCookies.add(key);
                     }
-                    if (HttpConfigConstants.SameSite.STRICT.getName().equalsIgnoreCase(this.sameSitePatterns.get(key))) {
-                        strictCookies.add(key.toString());
+                    if (HttpConfigConstants.SameSite.STRICT.getName().equalsIgnoreCase(this.sameSiteCookies.get(key))) {
+                        strictCookies.add(key);
                     }
                 }
-            }
+                //This is only defined when there are patterns, ensure the list has been initialized
+                if (this.sameSitePatterns != null) {
+                    for (Pattern key : this.sameSitePatterns.keySet()) {
 
-            //Construct the lax names
-            sb.append("SameSite Lax Cookies ").append(laxCookies).append("\n");
-            sb.append("SameSite None Cookies ").append(noneCookies).append("\n");
-            sb.append("SameSite Strict Cookies ").append(strictCookies);
-            if (!this.sameSiteErrorCookies.isEmpty()) {
-                sb.append("\n").append("Misconfigured SameSite cookies ").append(this.sameSiteErrorCookies);
+                        if (HttpConfigConstants.SameSite.LAX.getName().equalsIgnoreCase(this.sameSitePatterns.get(key))) {
+                            laxCookies.add(key.toString());
+                        }
+                        if (HttpConfigConstants.SameSite.NONE.getName().equalsIgnoreCase(this.sameSitePatterns.get(key))) {
+                            noneCookies.add(key.toString());
+                        }
+                        if (HttpConfigConstants.SameSite.STRICT.getName().equalsIgnoreCase(this.sameSitePatterns.get(key))) {
+                            strictCookies.add(key.toString());
+                        }
+                    }
+                }
+
+                //Construct the lax names
+                sb.append("SameSite Lax Cookies ").append(laxCookies).append("\n");
+                sb.append("SameSite None Cookies ").append(noneCookies).append("\n");
+                sb.append("SameSite Strict Cookies ").append(strictCookies);
+                if (!this.sameSiteErrorCookies.isEmpty()) {
+                    sb.append("\n").append("Misconfigured SameSite cookies ").append(this.sameSiteErrorCookies);
+                }
+
+                Tr.event(tc, sb.toString());
             }
-            Tr.event(tc, sb.toString());
 
         }
     }
@@ -1440,8 +1495,9 @@ public class HttpChannelConfig {
                 this.includedCompressionContentTypes.add("text/*");
                 this.includedCompressionContentTypes.add("application/javascript");
                 this.excludedCompressionContentTypes = new HashSet<String>();
-
-                Tr.event(tc, "Http Channel Config: compression has been enabled");
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Channel Config: compression has been enabled");
+                }
             }
         }
     }
@@ -1563,15 +1619,17 @@ public class HttpChannelConfig {
                 }
 
             }
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Compression Config", "compressionContentTypes updated: " +
+                                                   !hasConfigError);
 
-            Tr.event(tc, "Compression Config", "compressionContentTypes updated: " +
-                                               !hasConfigError);
-            if (!hasConfigError) {
-                for (String s : this.includedCompressionContentTypes) {
-                    Tr.event(tc, "Include list of content-types: " + s);
-                }
-                for (String s : this.excludedCompressionContentTypes) {
-                    Tr.event(tc, "Exclude list of content-types: " + s);
+                if (!hasConfigError) {
+                    for (String s : this.includedCompressionContentTypes) {
+                        Tr.event(tc, "Include list of content-types: " + s);
+                    }
+                    for (String s : this.excludedCompressionContentTypes) {
+                        Tr.event(tc, "Exclude list of content-types: " + s);
+                    }
                 }
             }
 
@@ -1614,9 +1672,9 @@ public class HttpChannelConfig {
             if (isSupportedConfiguration) {
                 this.preferredCompressionAlgorithm = value;
             }
-
-            Tr.event(tc, "Compression Config", "preferred compression algorithm set to: " + this.preferredCompressionAlgorithm);
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Compression Config", "preferred compression algorithm set to: " + this.preferredCompressionAlgorithm);
+            }
         }
     }
 
@@ -1632,7 +1690,9 @@ public class HttpChannelConfig {
             this.useRemoteIpOptions = convertBoolean(option);
 
             if (this.useRemoteIpOptions) {
-                Tr.event(tc, "HTTP Channel Config: remoteIp has been enabled");
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "HTTP Channel Config: remoteIp has been enabled");
+                }
             }
         }
 
@@ -1645,22 +1705,19 @@ public class HttpChannelConfig {
 
         if (Objects.nonNull(option) && this.useRemoteIpOptions) {
             String value = String.valueOf(option);
-
-            Tr.event(tc, "RemoteIp Config: proxies regex set to: " + value);
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "RemoteIp Config: proxies regex set to: " + value);
+            }
             this.proxiesPattern = Pattern.compile(this.proxiesRegex);
         }
     }
 
     protected void parseRemoteIpAccessLog(Object option) {
-
-        MSP.log("parseRemoteIpAccessLog: " + Objects.nonNull(option) + " useForwarding: " + this.useRemoteIpOptions);
-
         if (Objects.nonNull(option) && this.useRemoteIpOptions) {
             this.useForwardingHeadersInAccessLog = convertBoolean(option);
-
-            Tr.event(tc, "RemoteIp Config: useRemoteIpInAccessLog set to: " + useForwardingHeadersInAccessLog);
-            MSP.log("RemoteIp Config: useRemoteIpInAccessLog set to: " + useForwardingHeadersInAccessLog);
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "RemoteIp Config: useRemoteIpInAccessLog set to: " + useForwardingHeadersInAccessLog);
+            }
         }
     }
 
@@ -1681,9 +1738,9 @@ public class HttpChannelConfig {
                 this.configuredHeadersToSetIfMissing = new HashMap<Integer, Map.Entry<String, String>>();
                 this.configuredHeadersToRemove = new HashMap<Integer, String>();
                 this.configuredHeadersErrorSet = new HashSet<String>();
-
-                Tr.event(tc, "Http Channel Config: <headers> config has been enabled");
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Channel Config: <headers> config has been enabled");
+                }
                 parseHeadersToRemove(options.get(HttpConfigConstants.PROPNAME_RESPONSE_HEADERS_REMOVE_INTERNAL));
                 parseHeadersToAdd(options.get(HttpConfigConstants.PROPNAME_RESPONSE_HEADERS_ADD_INTERNAL));
                 parseHeadersToSet(options.get(HttpConfigConstants.PROPNAME_RESPONSE_HEADERS_SET_INTERNAL));
@@ -1719,7 +1776,9 @@ public class HttpChannelConfig {
                     }
                 }
             }
-            Tr.event(tc, "Http Headers Config: <headers> remove configuration finished parsing.");
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Http Headers Config: <headers> remove configuration finished parsing.");
+            }
 
         }
     }
@@ -1741,8 +1800,9 @@ public class HttpChannelConfig {
                     this.setHeaderToCollection(headerEntry, HttpConfigConstants.Headers.ADD);
                 }
             }
-            Tr.event(tc, "Http Headers Config: <headers> add configuration finished parsing.");
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Http Headers Config: <headers> add configuration finished parsing.");
+            }
         }
 
     }
@@ -1763,8 +1823,9 @@ public class HttpChannelConfig {
 
                     this.setHeaderToCollection(headerEntry, HttpConfigConstants.Headers.SET);
                 }
-                Tr.event(tc, "Http Headers Config: <headers> set configuration finished parsing.");
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Headers Config: <headers> set configuration finished parsing.");
+                }
             }
         }
     }
@@ -1785,8 +1846,9 @@ public class HttpChannelConfig {
 
                     this.setHeaderToCollection(headerEntry, HttpConfigConstants.Headers.SET_IF_MISSING);
                 }
-                Tr.event(tc, "Http Headers Config: <headers> setIfMissing configuration finished parsing.");
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Http Headers Config: <headers> setIfMissing configuration finished parsing.");
+                }
             }
         }
     }
@@ -1794,7 +1856,7 @@ public class HttpChannelConfig {
     protected void logHeadersConfig() {
 
         //If tracing is enabled, print out the state of these maps.
-        if (this.useHeadersOptions) {
+        if (this.useHeadersOptions && TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
 
             List<String> addHeaders = new LinkedList<String>();
 
@@ -1886,9 +1948,9 @@ public class HttpChannelConfig {
                 else if (collectionType == HttpConfigConstants.Headers.SET_IF_MISSING) {
                     this.configuredHeadersToSetIfMissing.put(headerNameHashCode, new AbstractMap.SimpleEntry<String, String>(headerName, headerValue));
                 }
-
-                Tr.event(tc, "Header " + collectionType.getName() + " configuration: parsed name [" + headerName + "] and value [" + headerValue + "]");
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Header " + collectionType.getName() + " configuration: parsed name [" + headerName + "] and value [" + headerValue + "]");
+                }
             }
 
         }
@@ -1903,8 +1965,9 @@ public class HttpChannelConfig {
     protected void parseAllowRetries(Object option) {
         if (Objects.nonNull(option)) {
             this.bAllowRetries = convertBoolean(option);
-            Tr.event(tc, "Config: allow retries is " + allowsRetries());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: allow retries is " + allowsRetries());
+            }
         }
     }
 
@@ -1916,8 +1979,9 @@ public class HttpChannelConfig {
     protected void parseHeaderValidation(Object option) {
         if (Objects.nonNull(option)) {
             this.bHeaderValidation = convertBoolean(option);
-            Tr.event(tc, "Config: header validation is " + isHeaderValidationEnabled());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: header validation is " + isHeaderValidationEnabled());
+            }
         }
     }
 
@@ -1930,8 +1994,9 @@ public class HttpChannelConfig {
     protected void parseJITOnlyReads(Object option) {
         if (Objects.nonNull(option)) {
             this.bJITOnlyReads = convertBoolean(option);
-            Tr.event(tc, "Config: JIT only reads is " + isJITOnlyReads());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: JIT only reads is " + isJITOnlyReads());
+            }
         }
     }
 
@@ -1944,8 +2009,9 @@ public class HttpChannelConfig {
     protected void parseStrictURLFormat(Object option) {
         if (Objects.nonNull(option)) {
             this.bStrictURLFormat = convertBoolean(option);
-            Tr.event(tc, "Config: Strict URL formatting is " + isStrictURLFormat());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: Strict URL formatting is " + isStrictURLFormat());
+            }
         }
     }
 
@@ -1965,14 +2031,16 @@ public class HttpChannelConfig {
                 option = "WebSphere Application Server";
             }
             this.baServerHeaderValue = GenericUtils.getEnglishBytes(option);
-            Tr.event(tc, "Config: server header value [" + option + "]");
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: server header value [" + option + "]");
+            }
         }
         // PM87013 (PM75371) End
         if (Objects.nonNull(optionServerHeader)) {
             this.bRemoveServerHeader = convertBoolean(optionServerHeader);
-            Tr.event(tc, "Config: remove server header is " + removeServerHeader());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: remove server header is " + removeServerHeader());
+            }
         }
     }
 
@@ -1986,12 +2054,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.lDateHeaderRange = minLimit(convertLong(option), 0L);
-                Tr.event(tc, "Config: date header range is " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: date header range is " + option);
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseDateHeaderRange", "1");
-                Tr.event(tc, "Config: Invalid date header range; " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid date header range; " + option);
+                }
             }
         }
     }
@@ -2013,14 +2084,16 @@ public class HttpChannelConfig {
 
         if (Objects.nonNull(option)) {
             documentedProperty = convertBoolean(option);
-            Tr.event(tc, "Config: set no-cache cookie control is " + documentedProperty);
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: set no-cache cookie control is " + documentedProperty);
+            }
         }
 
         if (Objects.nonNull(option2)) {
             originalProperty = convertBoolean(option2);
-            Tr.event(tc, "Config: set-cookie configures no-cache is " + originalProperty);
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: set-cookie configures no-cache is " + originalProperty);
+            }
         }
         this.bCookiesConfigureNoCache = originalProperty && documentedProperty;
     }
@@ -2034,12 +2107,14 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.headerChangeLimit = convertInteger(option);
-                Tr.event(tc, "Config: header change limit is " + getHeaderChangeLimit());
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: header change limit is " + getHeaderChangeLimit());
+                }
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseHeaderChangeLimit", "1");
-                Tr.event(tc, "Config: Invalid header change count of " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid header change count of " + option);
+                }
             }
         }
     }
@@ -2053,8 +2128,9 @@ public class HttpChannelConfig {
         // PK53193 - allow this to be disabled
         if (Objects.nonNull(option)) {
             this.bEnableSmugglingProtection = convertBoolean(option);
-            Tr.debug(tc, "Config: request smuggling protection is " + this.bEnableSmugglingProtection);
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: request smuggling protection is " + this.bEnableSmugglingProtection);
+            }
         }
     }
 
@@ -2077,8 +2153,9 @@ public class HttpChannelConfig {
         // PK41619 - allow this to be turned off
         if (Objects.nonNull(option)) {
             this.bAutoDecompression = convertBoolean(option);
-            Tr.event(tc, "Config: autodecompression is " + isAutoDecompressionEnabled());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: autodecompression is " + isAutoDecompressionEnabled());
+            }
         }
     }
 
@@ -2090,9 +2167,10 @@ public class HttpChannelConfig {
     protected void parsev0CookieDateRFC1123compat(Object option) {
         if (Objects.nonNull(option)) {
             this.v0CookieDateRFC1123compat = convertBoolean(option);
-            Tr.event(tc, "Config: v0CookieDateRFC1123compat is " + isv0CookieDateRFC1123compat() + " this = " + this);
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: v0CookieDateRFC1123compat is " + isv0CookieDateRFC1123compat() + " this = " + this);
+            }
         }
-
     }
 
     /**
@@ -2105,8 +2183,9 @@ public class HttpChannelConfig {
         //738893 - Skip adding the quotes to the cookie path attribute
         if (Objects.nonNull(option)) {
             this.skipCookiePathQuotes = convertBoolean(option);
-            Tr.event(tc, "Config: SkipCookiePathQuotes is " + shouldSkipCookiePathQuotes());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: SkipCookiePathQuotes is " + shouldSkipCookiePathQuotes());
+            }
         }
     }
 
@@ -2119,8 +2198,9 @@ public class HttpChannelConfig {
         //PI31734 - prevent multiple Set-Cookies with the same name
         if (Objects.nonNull(option)) {
             this.doNotAllowDuplicateSetCookies = convertBoolean(option);
-            Tr.event(tc, "Config: DoNotAllowDuplicateSetCookies is " + doNotAllowDuplicateSetCookies());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: DoNotAllowDuplicateSetCookies is " + doNotAllowDuplicateSetCookies());
+            }
         }
     }
 
@@ -2133,8 +2213,9 @@ public class HttpChannelConfig {
         //PI11176
         if (Objects.nonNull(option)) {
             this.waitForEndOfMessage = convertBoolean(option);
-            Tr.event(tc, "Config: PI33453:WaitForEndOfMessage is " + shouldWaitForEndOfMessage());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: PI33453:WaitForEndOfMessage is " + shouldWaitForEndOfMessage());
+            }
         }
     }
 
@@ -2147,9 +2228,10 @@ public class HttpChannelConfig {
         //PI35277
         if (Objects.nonNull(option)) {
             this.removeCLHeaderInTempStatusRespRFC7230compat = convertBoolean(option);
-            Tr.debug(tc, "Config: RemoveCLHeaderInTempStatusRespRFC7230compat "
-                         + shouldRemoveCLHeaderInTempStatusRespRFC7230compat());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: RemoveCLHeaderInTempStatusRespRFC7230compat "
+                             + shouldRemoveCLHeaderInTempStatusRespRFC7230compat());
+            }
         }
     }
 
@@ -2162,8 +2244,9 @@ public class HttpChannelConfig {
         //PI45266
         if (Objects.nonNull(option)) {
             this.preventResponseSplit = convertBoolean(option);
-            Tr.event(tc, "Config: PreventResponseSplit is " + shouldPreventResponseSplit());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: PreventResponseSplit is " + shouldPreventResponseSplit());
+            }
         }
     }
 
@@ -2176,8 +2259,9 @@ public class HttpChannelConfig {
         //PI11176
         if (Objects.nonNull(option)) {
             this.attemptPurgeData = convertBoolean(option);
-            Tr.event(tc, "Config: PI11176:PurgeDataDuringClose is " + shouldAttemptPurgeData());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: PI11176:PurgeDataDuringClose is " + shouldAttemptPurgeData());
+            }
         }
     }
 
@@ -2190,8 +2274,9 @@ public class HttpChannelConfig {
         //PI57542
         if (Objects.nonNull(option)) {
             this.throwIOEForInboundConnections = convertBoolean(option);
-            Tr.event(tc, "Config: ThrowIOEForInboundConnections is " + throwIOEForInboundConnections());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: ThrowIOEForInboundConnections is " + throwIOEForInboundConnections());
+            }
         }
     }
 
@@ -2214,8 +2299,9 @@ public class HttpChannelConfig {
 
         if (Objects.nonNull(option)) {
             this.purgeRemainingResponseBody = convertBoolean(option);
-            Tr.event(tc, "Config: PurgeRemainingResponseBody is " + shouldPurgeRemainingResponseBody());
-
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                Tr.event(tc, "Config: PurgeRemainingResponseBody is " + shouldPurgeRemainingResponseBody());
+            }
         }
     }
 
@@ -2236,7 +2322,7 @@ public class HttpChannelConfig {
 
             }
 
-            if (Objects.nonNull(option)) {
+            if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
                 Tr.event(tc, "HTTP Channel Config: versionProtocol has been set to " + protocolVersion);
             }
 
@@ -2254,12 +2340,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.decompressionRatioLimit = convertInteger(option);
-                Tr.event(tc, "Config: Decompression ratio limit is set to: " + getDecompressionRatioLimit());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Decompression ratio limit is set to: " + getDecompressionRatioLimit());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseDecompressionRatioLimit", "1");
-                Tr.event(tc, "Config: Invalid decompression ratio limit; " + option);
-
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid decompression ratio limit; " + option);
+                }
             }
         }
     }
@@ -2276,11 +2365,15 @@ public class HttpChannelConfig {
         if (Objects.nonNull(option)) {
             try {
                 this.decompressionTolerance = convertInteger(option);
-                Tr.event(tc, "Config: Decompression tolerance is set to: " + getDecompressionTolerance());
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Decompression tolerance is set to: " + getDecompressionTolerance());
+                }
 
             } catch (NumberFormatException nfe) {
                 FFDCFilter.processException(nfe, getClass().getName() + ".parseDecompressionTolerance", "1");
-                Tr.event(tc, "Config: Invalid decompression tolerance; " + option);
+                if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
+                    Tr.event(tc, "Config: Invalid decompression tolerance; " + option);
+                }
 
             }
         }
