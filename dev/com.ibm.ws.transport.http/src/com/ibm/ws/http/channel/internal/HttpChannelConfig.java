@@ -194,8 +194,8 @@ public class HttpChannelConfig {
     protected Map<String, String> sameSiteCookies = null;
     protected Set<String> sameSiteErrorCookies = null;
     protected Map<String, String> sameSiteStringPatterns = null;
-    private Map<Pattern, String> sameSitePatterns = null;
-    private boolean onlySameSiteStar = false;
+    protected Map<Pattern, String> sameSitePatterns = null;
+    protected boolean onlySameSiteStar = false;
 
     /** Identifies if the channel has been configured to use <headers> configuration */
     protected boolean useHeadersOptions = false;
