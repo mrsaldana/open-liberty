@@ -39,6 +39,7 @@ import io.netty.handler.codec.http.HttpMessage;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler;
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler.PriorKnowledgeUpgradeEvent;
 import io.netty.handler.ssl.SslContext;
@@ -317,8 +318,6 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
             pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new LibertyHttpObjectAggregator(maxContentLength));
         }
 
-        //pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new HttpObjectAggregator(maxContentLength);
-        //pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new HttpObjectAggregator(64 * 1024));
         pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new ChunkSizeLoggingHandler());
         pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new ChunkedWriteHandler());
         // if (httpConfig.useAutoCompression()) {
@@ -330,6 +329,10 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         if (httpConfig.useForwardingHeaders()) {
             pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new RemoteIpHandler(httpConfig));
         }
+
+        pipeline.addLast("webSocketServerProtocolHandler", new WebSocketServerProtocolHandler("/ws"));
+        pipeline.addLast("webSocketFrameHandler", new WebSocketFrameHandler());
+
     }
 
     public static class HttpPipelineBuilder {
