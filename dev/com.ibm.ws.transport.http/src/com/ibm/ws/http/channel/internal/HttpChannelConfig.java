@@ -194,8 +194,8 @@ public class HttpChannelConfig {
     protected Map<String, String> sameSiteCookies = null;
     protected Set<String> sameSiteErrorCookies = null;
     protected Map<String, String> sameSiteStringPatterns = null;
-    private Map<Pattern, String> sameSitePatterns = null;
-    private boolean onlySameSiteStar = false;
+    protected Map<Pattern, String> sameSitePatterns = null;
+    protected boolean onlySameSiteStar = false;
 
     /** Identifies if the channel has been configured to use <headers> configuration */
     protected boolean useHeadersOptions = false;
@@ -1221,10 +1221,14 @@ public class HttpChannelConfig {
      * @param option
      */
     protected void parseCookiesSameSiteLax(Object option) {
+        MSP.debug("SAMESITE: option null? " + Objects.nonNull(option) + " usingSamesite: " + this.useSameSiteOptions);
         if (Objects.nonNull(option) && this.useSameSiteOptions) {
+            MSP.debug("SAMESITE 1");
             if (option instanceof String[]) {
+                MSP.debug("SAMESITE 2");
                 String[] cookies = (String[]) option;
                 for (String s : cookies) {
+                    MSP.debug("SAMESITE cookie found: " + s);
                     addSameSiteAttribute(s, HttpConfigConstants.SameSite.LAX);
                 }
             }
@@ -1267,17 +1271,18 @@ public class HttpChannelConfig {
         if (this.sameSiteErrorCookies.contains(name)) {
             Tr.warning(tc, "cookies.samesite.knownDuplicateName", name, sameSiteAttribute.getName().toLowerCase());
         }
-
+        MSP.debug("addSameSiteAttribute");
         //If this cookie name has already been added to the error list, do not attempt to
         //add it. Otherwise, check each set to confirm its uniqueness. If not unique,
         //remove it from the list, warn the user, and set the cookie as erroneous. Otherwise,
         //store the cookie under the respective list.
         if (!sameSiteErrorCookies.contains(name)) {
-
+            MSP.debug("addSameSiteAttribute 1 ");
             //Wildcard support is only supported for patterns ending on the * character. There cannot
             //be more than one * character in the string.
             if (name.endsWith(HttpConfigConstants.WILDCARD_CHAR) && name.indexOf(HttpConfigConstants.WILDCARD_CHAR) == name.lastIndexOf(HttpConfigConstants.WILDCARD_CHAR)) {
                 //Check that it isn't already defined with a different SameSite value
+                MSP.debug("addSameSiteAttribute 2 ");
                 if (this.sameSiteStringPatterns.containsKey(name) && !this.sameSiteStringPatterns.get(name).equals(sameSiteAttribute.getName())) {
                     this.sameSiteStringPatterns.remove(name);
                     Tr.warning(tc, "cookies.samesite.duplicateName", name, sameSiteAttribute.getName().toLowerCase());
@@ -1286,6 +1291,7 @@ public class HttpChannelConfig {
                     // If this is not a duplicate with the same value then add it, otherwise ignore the duplicate.
                     if (!this.sameSiteStringPatterns.containsKey(name)) {
                         this.sameSiteStringPatterns.put(name, sameSiteAttribute.getName());
+                        MSP.debug("addSameSiteAttribute 3");
                     } else {
                         if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
                             Tr.event(tc, "The duplicate pattern: " + name + " was not added again to the: " + sameSiteAttribute.getName() + " list.");
@@ -1332,7 +1338,7 @@ public class HttpChannelConfig {
      * registered as 'lax', 'none', and 'strict'; as well as a representation of all values that were considered
      * erroneous.
      */
-    private void initSameSiteCookiesPatterns() {
+    protected void initSameSiteCookiesPatterns() {
         if (this.useSameSiteConfig()) {
             Map<Pattern, String> patterns = new HashMap<Pattern, String>();
             Pattern p = null;
