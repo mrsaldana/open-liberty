@@ -37,6 +37,7 @@ import com.ibm.ws.http.dispatcher.internal.HttpDispatcher;
 import com.ibm.ws.http.netty.MSP;
 import com.ibm.ws.http.netty.NettyHttpConstants;
 import com.ibm.ws.http.netty.NettyVirtualConnectionImpl;
+import com.ibm.ws.http.netty.inbound.NettyTCPConnectionContext;
 import com.ibm.ws.http.netty.message.NettyRequestMessage;
 import com.ibm.ws.http.netty.message.NettyResponseMessage;
 import com.ibm.wsspi.bytebuffer.WsByteBuffer;
@@ -126,7 +127,9 @@ public class HttpInboundServiceContextImpl extends HttpServiceContextImpl implem
         super();
         nettyContext = context;
 
-        super.init(context);
+        TCPConnectionContext tsc = new NettyTCPConnectionContext(context, vc);
+
+        super.init(tsc, context);
 
         this.setHeadersParsed();
         setVC(vc);
@@ -985,11 +988,11 @@ public class HttpInboundServiceContextImpl extends HttpServiceContextImpl implem
                 return;
             }
 
-            if(getRequest() == null) {
+            if (getRequest() == null) {
                 if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
-                    Tr.debug(tc, "logFinalResponse", "getRequest() is null. HTTPAccess log entry is skipped." );
+                    Tr.debug(tc, "logFinalResponse", "getRequest() is null. HTTPAccess log entry is skipped.");
                 }
-                return; 
+                return;
             }
 
             if (MethodValues.UNDEF.equals(getRequest().getMethodValue())) {
