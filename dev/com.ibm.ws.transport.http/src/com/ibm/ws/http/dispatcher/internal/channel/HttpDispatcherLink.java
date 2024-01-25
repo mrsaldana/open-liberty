@@ -46,9 +46,8 @@ import com.ibm.ws.http.internal.VirtualHostMap.RequestHelper;
 import com.ibm.ws.http.netty.MSP;
 import com.ibm.ws.http.netty.NettyVirtualConnectionImpl;
 import com.ibm.ws.http.netty.message.NettyRequestMessage;
-import com.ibm.ws.http.netty.pipeline.TransportOutboundHandler;
-import com.ibm.ws.http.netty.pipeline.inbound.HttpDispatcherHandler;
-import com.ibm.ws.http.netty.pipeline.inbound.TransportInboundHandler;
+import com.ibm.ws.http.netty.pipeline.ByteBufferCodec;
+import com.ibm.ws.http.netty.pipeline.inbound.LibertyHttpObjectAggregator;
 import com.ibm.ws.netty.upgrade.NettyServletUpgradeHandler;
 import com.ibm.ws.transport.access.TransportConnectionAccess;
 import com.ibm.ws.transport.access.TransportConstants;
@@ -80,8 +79,8 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.codec.http2.HttpToHttp2ConnectionHandler;
-import io.netty.handler.codec.http2.HttpConversionUtil;
 import io.openliberty.netty.internal.tcp.InactivityTimeoutHandler;
 
 /**
@@ -231,7 +230,7 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
             nettyContext.channel().pipeline().remove(handler);
         }
 
-        nettyContext.channel().pipeline().remove(InactivityTimeoutHandler.class);
+        //nettyContext.channel().pipeline().remove(InactivityTimeoutHandler.class);
 
         // Add Inbound handler to accumulate data which will not belong to HTTP but rather the upgrade protocol
         System.out.println("Adding Upgrade Handler!");
@@ -241,19 +240,26 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
         if (this.nettyContext.pipeline().get(NettyServletUpgradeHandler.class) == null) {
 
             NettyServletUpgradeHandler upgradeHandler = new NettyServletUpgradeHandler(nettyContext.channel());
+
+            upgradeHandler.setVC(vc);
             if (http2Handler == null) { // In HTTP 1.1
                 System.out.println("Found HTTP1!");
                 HttpServerCodec httpHandler = nettyContext.channel().pipeline().get(HttpServerCodec.class);
                 if (httpHandler == null) {
                     System.out.println("Found null handler HTTP!");
-                    throw new UnsupportedOperationException("Can't deal with this");
+                    // throw new UnsupportedOperationException("Can't deal with this");
                 }
 
                 System.out.println("Should remove remove the dispatch handler, only keep reading and writing upgrade handler");
 
-                nettyContext.channel().pipeline().addBefore(nettyContext.channel().pipeline().context(httpHandler).name(), "ServletUpgradeHandler", upgradeHandler);
+                // nettyContext.channel().pipeline().addBefore(nettyContext.channel().pipeline().context(httpHandler).name(), "ServletUpgradeHandler", upgradeHandler);
+                //nettyContext.channel().pipeline().addLast(new WebSocketServerProtocolHandler("/websocket")); // Handles the WebSocket upgrade and control frames
+                nettyContext.channel().pipeline().addLast("ServletUpgradeHandler", upgradeHandler);
+                
+               // nettyContext.channel().pipeline().remove(LibertyHttpObjectAggregator.class);
 
-                nettyContext.channel().pipeline().remove(HttpDispatcherHandler.class);
+                // if(nettyContext.channel().pipeline().get(HttpDispatcherHandler.class)
+                // nettyContext.channel().pipeline().remove(HttpDispatcherHandler.class);
                 System.out.println(nettyContext.channel().pipeline().names());
             } else { // In HTTP2
                 System.out.println("Found HTTP2! Need to check this logic...");
@@ -1655,6 +1661,7 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
                     Tr.debug(tc, "Connection Not closed because Servlet Upgrade detected.");
                 }
                 if (usingNetty)
+                    
                     this.prepareForUpgrade();
 
 //                this.nettyContext.pipeline().remove(HttpDispatcherHandler.class);
@@ -1664,15 +1671,12 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
 //                this.nettyContext.pipeline().remove("chunkWriteHandler");
 //                this.nettyContext.pipeline().remove(TransportInboundHandler.class);
 //                this.nettyContext.pipeline().remove(TransportOutboundHandler.class);
-                
-                
-//                
-//                [tcpLoggingHandler, maxConnectionHandler, 
-//                 ServletUpgradeHandler, HTTP_SERVER_HANDLER, LibertyHttpObjectAggregator#0, 
-//                 chunkLoggingHandler, chunkWriteHandler, ByteBufferCodec#0, TransportInboundHandler#0, 
+
+//
+//                [tcpLoggingHandler, maxConnectionHandler,
+//                 ServletUpgradeHandler, HTTP_SERVER_HANDLER, LibertyHttpObjectAggregator#0,
+//                 chunkLoggingHandler, chunkWriteHandler, ByteBufferCodec#0, TransportInboundHandler#0,
 //                 TransportOutboundHandler#0, DefaultChannelPipeline$TailContext#0]
-                
-                
 
                 System.out.println(nettyContext.pipeline().names());
 
