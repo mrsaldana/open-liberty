@@ -292,7 +292,23 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
         //}
         // if (nettyContext.pipeline().get("HTTP_SERVER_HANDLER") != null) {
         //   this.nettyContext.pipeline().remove("HTTP_SERVER_HANDLER");
-    }return;
+            
+      
+            
+    }
+        
+        if(nettyContext.pipeline().get(NettyServletUpgradeHandler.class) !=null) {
+            this.nettyContext.channel().close();
+        }
+        
+        
+        return;
+    
+    
+    
+    
+    
+    
 
     }
 
@@ -1625,17 +1641,17 @@ public class HttpDispatcherLink extends InboundApplicationLink implements HttpIn
     @Override
     public SSLContext getSSLContext() {
 
-        if (this.usingNetty) {
-            //TODO: return null for now, connect to pipeline ssl
-            return null;
-        } else {
+//        if (this.usingNetty) {
+//            //TODO: return null for now, connect to pipeline ssl
+//            return null;
+//        } else {
             if (this.sslinfo == null &&
                 this.isc != null &&
                 this.isc.getSSLContext() != null) {
                 this.sslinfo = new SSLContextImpl(this.isc.getSSLContext());
             }
             return this.sslinfo;
-        }
+    //    }
 
     }
 
