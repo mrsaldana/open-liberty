@@ -57,6 +57,8 @@ import com.ibm.ws.http.channel.h2internal.hpack.HpackConstants.LiteralIndexType;
 import com.ibm.ws.http.channel.internal.inbound.HttpInboundLink;
 import com.ibm.ws.http.channel.internal.inbound.HttpInboundServiceContextImpl;
 import com.ibm.ws.http.dispatcher.internal.HttpDispatcher;
+import com.ibm.ws.http.netty.inbound.NettyTCPConnectionContext;
+import com.ibm.ws.http.netty.inbound.NettyTCPWriteRequestContext;
 import com.ibm.ws.http.netty.MSP;
 import com.ibm.ws.http.netty.NettyHttpConstants;
 import com.ibm.ws.http.netty.message.NettyResponseMessage;
@@ -104,6 +106,7 @@ import com.ibm.wsspi.tcpchannel.TCPRequestContext;
 import com.ibm.wsspi.tcpchannel.TCPWriteCompletedCallback;
 import com.ibm.wsspi.tcpchannel.TCPWriteRequestContext;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.VoidChannelPromise;
@@ -112,9 +115,11 @@ import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http2.DefaultHttp2Headers;
 import io.netty.handler.codec.http2.Http2Connection;
@@ -2006,7 +2011,7 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
      * @param wsbb
      * @param msg
      */
-    private void formatBody(WsByteBuffer[] wsbb, HttpBaseMessageImpl msg) {
+    protected void formatBody(WsByteBuffer[] wsbb, HttpBaseMessageImpl msg) {
 
         if (null == wsbb || (null == msg && Objects.isNull(nettyContext))) {
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
@@ -2274,13 +2279,18 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
         }
 
         MSP.log("should write netty response");
+        final boolean isSwitching = response.status() == HttpResponseStatus.SWITCHING_PROTOCOLS;
+        
+        if(isSwitching && "websocket".equalsIgnoreCase(response.headers().get(HttpHeaderNames.UPGRADE))) {
+           nettyContext.channel().attr(NettyHttpConstants.PROTOCOL).set("WebSocket");
+        }
+        
 
         this.nettyContext.channel().writeAndFlush(this.nettyResponse);
         this.setHeadersSent();
         try {
         }catch(Exception e) {
         
-            System.out.println("done waiting 10 secs to simulate sync write");
         
         }
         
@@ -2929,6 +2939,10 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
             } else if (addedCompressionContentLength || (!msg.isChunkedEncodingSet() && msg.getContentLength() == HttpGenerics.NOT_SET)) {
                 System.out.println("Setting transfer encoding due to no content length or transfer header!!");
                 HttpUtil.setTransferEncodingChunked(nettyResponse, true);
+                if(nettyContext.channel().hasAttr(NettyHttpConstants.CONTENT_LENGTH)) {
+                    nettyContext.channel().attr(NettyHttpConstants.CONTENT_LENGTH).set(null);
+                    MSP.log("ISC should have remove attribute for content length: " + nettyContext.channel().hasAttr(NettyHttpConstants.CONTENT_LENGTH));
+                }
             }
 
             if (msg.isBodyExpected()) {
@@ -2948,6 +2962,7 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
             }
             sendHeaders(nettyResponse);
             if (nettyResponse.headers().contains(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text())) {
+                nettyContext.channel().attr(NettyHttpConstants.PROTOCOL).set("HTTP2");
                 HttpToHttp2ConnectionHandler handler = this.nettyContext.channel().pipeline().get(HttpToHttp2ConnectionHandler.class);
                 if (Objects.isNull(handler)) {
                     System.out.println("Could NOT find handler for push! Assuming not valid push, ignoring preload link search");
@@ -2973,33 +2988,41 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
         }
         if (Objects.nonNull(buffers) && this.nettyContext.channel().pipeline().get(NettyServletUpgradeHandler.class) == null) {
             MSP.log("sendOutgoing are buffers good? " + GenericUtils.sizeOf(buffers));
-
-            for (
-
-            WsByteBuffer buffer : buffers) {
-                if (Objects.nonNull(buffer)) { // Write buffer
-                    if (buffer.remaining() == 0) {
-                        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
-                            Tr.debug(tc, "Ignoring buffer with no content");
-                        }
-                        continue;
-                    }
-                    System.out.println("Writing buffer: " + buffer);
-                    System.out.println("Content: " + WsByteBufferUtils.asString(buffer));
-                    String streamId = nettyResponse.headers().get(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text(), "-1");
-//                    AbstractMap.SimpleEntry<Integer, WsByteBuffer> entry = new AbstractMap.SimpleEntry<Integer, WsByteBuffer>(Integer.valueOf(streamId), buffer.duplicate());
-                    AbstractMap.SimpleEntry<Integer, WsByteBuffer> entry = new AbstractMap.SimpleEntry<Integer, WsByteBuffer>(Integer.valueOf(streamId), HttpDispatcher.getBufferManager().wrap(WsByteBufferUtils.asByteArray(buffer)));
-                    this.nettyContext.channel().write(entry);
-//                    this.nettyContext.channel().writeAndFlush(buffer);
-                } else {
-                    MSP.log("This is weird!!! Sending a null buffer?!?!?!");
-                }
-//                else // Write last http content
-//                    this.nettyContext.channel().write(new DefaultLastHttpContent());
+            String streamId = nettyResponse.headers().get(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text(), "-1");
+            if(this.getTSC() instanceof NettyTCPConnectionContext) {
+               ((NettyTCPWriteRequestContext) (getTSC().getWriteInterface())).setStreamId(streamId);
             }
-            System.out.println("Writing on pipeline for: " + this.nettyContext + " channel: " + this.nettyContext.channel());
-            this.nettyContext.channel().pipeline().names().forEach(handler -> System.out.println(handler));
-            this.nettyContext.channel().flush();
+            
+            
+            synchWrite();
+            
+
+//            for (
+//
+//            WsByteBuffer buffer : buffers) {
+//                if (Objects.nonNull(buffer)) { // Write buffer
+//                    if (buffer.remaining() == 0) {
+//                        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+//                            Tr.debug(tc, "Ignoring buffer with no content");
+//                        }
+//                        continue;
+//                    }
+//                    System.out.println("Writing buffer: " + buffer);
+//           //         System.out.println("Content: " + WsByteBufferUtils.asString(buffer));
+//                    String streamId = nettyResponse.headers().get(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text(), "-1");
+////                    AbstractMap.SimpleEntry<Integer, WsByteBuffer> entry = new AbstractMap.SimpleEntry<Integer, WsByteBuffer>(Integer.valueOf(streamId), buffer.duplicate());
+//                    AbstractMap.SimpleEntry<Integer, WsByteBuffer> entry = new AbstractMap.SimpleEntry<Integer, WsByteBuffer>(Integer.valueOf(streamId), HttpDispatcher.getBufferManager().wrap(WsByteBufferUtils.asByteArray(buffer)));
+//                    this.nettyContext.channel().write(entry);
+////                    this.nettyContext.channel().writeAndFlush(buffer);
+//                } else {
+//                    MSP.log("This is weird!!! Sending a null buffer?!?!?!");
+//                }
+////                else // Write last http content
+////                    this.nettyContext.channel().write(new DefaultLastHttpContent());
+//            }
+//            System.out.println("Writing on pipeline for: " + this.nettyContext + " channel: " + this.nettyContext.channel());
+//            this.nettyContext.channel().pipeline().names().forEach(handler -> System.out.println(handler));
+//            this.nettyContext.channel().flush();
         }
     }
 
@@ -3297,6 +3320,7 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
             }
             sendHeaders(nettyResponse);
             if (nettyResponse.headers().contains(HttpConversionUtil.ExtensionHeaderNames.STREAM_ID.text())) {
+                
                 HttpToHttp2ConnectionHandler handler = this.nettyContext.channel().pipeline().get(HttpToHttp2ConnectionHandler.class);
                 if (Objects.isNull(handler)) {
                     System.out.println("Could NOT find handler for push! Assuming not valid push, ignoring preload link search");
@@ -3367,7 +3391,9 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
             }
             this.nettyContext.channel().write(lastContent);
         }
-        this.nettyContext.channel().flush();
+        ChannelFuture flushFuture = this.nettyContext.channel().writeAndFlush(Unpooled.EMPTY_BUFFER);
+        //TODO: sync write
+        flushFuture.awaitUninterruptibly();
         MSP.log("set message sent");
         setMessageSent();
     }
