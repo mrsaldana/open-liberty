@@ -55,19 +55,19 @@ public class BufferEncoder extends MessageToMessageEncoder<AbstractMap.SimpleEnt
         MSP.log("Encode: bytes written: " + bytesWritten + ", bytes to write: " + message.remaining());
         System.out.println("Encode Got content: " + WsByteBufferUtils.asString(message));
 
-        // If "Content-Length" is set, check if it matches the bytes written
-        if (hasContentLength) {
-            boolean doLastHttpContent = context.channel().attr(NettyHttpConstants.CONTENT_LENGTH).get() == bytesWritten;
-
-            if (!doLastHttpContent) {
-                // Send content with "Content-Length" header
-                out.add(new StreamSpecificHttpContent(streamId, Unpooled.wrappedBuffer(message.getWrappedByteBuffer())));
-            } else {
-                // Send last HTTP content
-                System.out.println("Sending last http content");
-                out.add(new LastStreamSpecificHttpContent(streamId, Unpooled.wrappedBuffer(message.getWrappedByteBuffer())));
-            }
-        } else {
+//        // If "Content-Length" is set, check if it matches the bytes written
+//        if (hasContentLength) {
+//            boolean doLastHttpContent = context.channel().attr(NettyHttpConstants.CONTENT_LENGTH).get() == bytesWritten;
+//
+//            if (!doLastHttpContent) {
+//                // Send content with "Content-Length" header
+//                out.add(new StreamSpecificHttpContent(streamId, Unpooled.wrappedBuffer(message.getWrappedByteBuffer())));
+//            } else {
+//                // Send last HTTP content
+//                System.out.println("Sending last http content");
+//                out.add(new LastStreamSpecificHttpContent(streamId, Unpooled.wrappedBuffer(message.getWrappedByteBuffer())));
+//            }
+//        } else {
             // If "Content-Length" is not set, determine whether it's HTTP/2 or HTTP/1.1 with chunked encoding
             if (isHttp2(context)) {
                 // Send content as HTTP/2
@@ -79,8 +79,10 @@ public class BufferEncoder extends MessageToMessageEncoder<AbstractMap.SimpleEnt
                 ChunkedInput<ByteBuf> chunkedInput = new WsByteBufferChunkedInput(message);
                 MSP.log("Should be writing a chunk of size: " + chunkedInput.length());
                 context.writeAndFlush(chunkedInput);
+                
+                
             }
-        }
+    //    }
     }
 
     /**
