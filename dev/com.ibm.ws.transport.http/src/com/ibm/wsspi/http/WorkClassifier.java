@@ -14,8 +14,6 @@ package com.ibm.wsspi.http;
 
 import java.util.concurrent.Executor;
 
-import io.netty.handler.codec.http.FullHttpRequest;
-
 /**
  * Work classification
  *
@@ -32,7 +30,5 @@ public interface WorkClassifier {
      * @return an Executor to run the HTTP request.
      */
     Executor classify(HttpRequest request, HttpInboundConnection inboundConnection);
-
-    Executor classify(FullHttpRequest request, HttpInboundConnection inboundConnection);
 
 }
