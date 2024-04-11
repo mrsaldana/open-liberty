@@ -89,7 +89,7 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
     public static final String HTTP_KEEP_ALIVE_HANDLER_NAME = "httpKeepAlive";
     public static final String HTTP2_CLEARTEXT_UPGRADE_HANDLER_NAME = "H2C_UPGRADE_HANDLER";
 
-    long maxContentLength = Long.MAX_VALUE;
+    public static final long maxContentLength = Long.MAX_VALUE;
 
     private HttpPipelineInitializer(HttpPipelineBuilder builder) {
         Objects.requireNonNull(builder);
@@ -359,13 +359,13 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
                 //                         new LibertyHttpObjectAggregator(httpConfig.getMessageSizeLimit() == -1 ? maxContentLength : httpConfig.getMessageSizeLimit()));
                 // ctx.pipeline().remove(HttpServerUpgradeHandler.class);
                 // ctx.fireChannelRead(ReferenceCountUtil.retain(msg, 1));
-                MSP.log("NO UPGRADE DETECTED - ADD HTTP ");
 
                 if ("HTTP2".equals(ctx.pipeline().channel().attr(NettyHttpConstants.PROTOCOL).get())) {
 
                     ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
                     return;
                 }
+                MSP.log("NO UPGRADE DETECTED - ADD HTTP ");
 
                 if (msg instanceof FullHttpRequest) {
 
