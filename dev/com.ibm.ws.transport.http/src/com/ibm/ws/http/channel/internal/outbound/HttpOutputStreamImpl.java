@@ -512,23 +512,23 @@ public class HttpOutputStreamImpl extends HttpOutputStreamConnectWeb {
         }
 
         if ((isc != null) && (isc instanceof HttpInboundServiceContextImpl)) {
-           // if (!((HttpInboundServiceContextImpl) isc).getHttpConfig().useNetty()) {
-                if (this.isc.getResponse() == null) {
-                    IOException x = new IOException("response Object(s) (e.g. getObjectFactory()) are null");
-                    throw x;
-                }
+            // if (!((HttpInboundServiceContextImpl) isc).getHttpConfig().useNetty()) {
+            if (this.isc.getResponse() == null) {
+                IOException x = new IOException("response Object(s) (e.g. getObjectFactory()) are null");
+                throw x;
+            }
 
-                if (!this.isc.getResponse().isCommitted()) {
-                    if (obs != null && !this.WCheadersWritten) {
-                        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
-                            Tr.debug(tc, "obs  ->" + obs);
-                        }
-                        obs.alertOSFirstFlush();
+            if (!this.isc.getResponse().isCommitted()) {
+                if (obs != null && !this.WCheadersWritten) {
+                    if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                        Tr.debug(tc, "obs  ->" + obs);
                     }
-
-                    this.isc.getResponse().setCommitted();
+                    obs.alertOSFirstFlush();
                 }
-           // }
+
+                this.isc.getResponse().setCommitted();
+            }
+            // }
         }
 
         if (this.ignoreFlush) {
@@ -540,12 +540,14 @@ public class HttpOutputStreamImpl extends HttpOutputStreamConnectWeb {
         }
 
         final boolean writingBody = (hasBufferedContent());
+
         // flip the last buffer for the write...
         if (writingBody && null != this.output[this.outputIndex]) {
             this.output[this.outputIndex].flip();
         }
         try {
             WsByteBuffer[] content = (writingBody) ? this.output : null;
+
             if (isClosed() || this.isClosing) {
                 if (!hasFinished) { //if we've already called finishResponseMessage - don't call again
                     // on a closed stream, use the final write api
