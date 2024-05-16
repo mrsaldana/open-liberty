@@ -37,7 +37,6 @@ import com.ibm.ws.http.dispatcher.internal.HttpDispatcher;
 import com.ibm.ws.http.internal.HttpEndpointImpl;
 import com.ibm.ws.http.logging.internal.DisabledLogger;
 import com.ibm.ws.kernel.productinfo.ProductInfo;
-import com.ibm.ws.http.netty.MSP;
 import com.ibm.wsspi.http.channel.values.VersionValues;
 import com.ibm.wsspi.http.logging.AccessLog;
 import com.ibm.wsspi.http.logging.DebugLog;
@@ -1254,14 +1253,10 @@ public class HttpChannelConfig {
      * @param option
      */
     protected void parseCookiesSameSiteLax(Object option) {
-        MSP.debug("SAMESITE: option null? " + Objects.nonNull(option) + " usingSamesite: " + this.useSameSiteOptions);
         if (Objects.nonNull(option) && this.useSameSiteOptions) {
-            MSP.debug("SAMESITE 1");
             if (option instanceof String[]) {
-                MSP.debug("SAMESITE 2");
                 String[] cookies = (String[]) option;
                 for (String s : cookies) {
-                    MSP.debug("SAMESITE cookie found: " + s);
                     addSameSiteAttribute(s, HttpConfigConstants.SameSite.LAX);
                 }
             }
@@ -1300,13 +1295,12 @@ public class HttpChannelConfig {
         }
     }
 
-    private void parseCookiesSameSitePartitioned(Map<Object, Object> props) {
-        Object value = props.get(HttpConfigConstants.PROPNAME_SAMESITE_PARTITIONED);
-        if (null != value && this.useSameSiteConfig()) {
+    protected void parseCookiesSameSitePartitioned(Object option) {
+        if (Objects.nonNull(option) && this.useSameSiteOptions) {
+            if (option instanceof Boolean) {
 
-            if (value instanceof Boolean) {
-                Boolean partitionedValue= (Boolean) value;
-                if(partitionedValue){
+                Boolean partitionedValue = (Boolean) option;
+                if (partitionedValue) {
                     this.isPartitioned = true;
                 }
             }
@@ -1316,23 +1310,35 @@ public class HttpChannelConfig {
         }
     }
 
+    private void parseCookiesSameSitePartitioned(Map<Object, Object> props) {
+        Object value = props.get(HttpConfigConstants.PROPNAME_SAMESITE_PARTITIONED);
+        if (null != value && this.useSameSiteConfig()) {
+
+            if (value instanceof Boolean) {
+                Boolean partitionedValue = (Boolean) value;
+                if (partitionedValue) {
+                    this.isPartitioned = true;
+                }
+            }
+            if (this.useSameSiteConfig() && (TraceComponent.isAnyTracingEnabled()) && (tc.isEventEnabled())) {
+                Tr.event(tc, "Http Channel Config: SameSite Partitioned configuration parsed.");
+            }
+        }
+    }
 
     private void addSameSiteAttribute(String name, HttpConfigConstants.SameSite sameSiteAttribute) {
         if (this.sameSiteErrorCookies.contains(name)) {
             Tr.warning(tc, "cookies.samesite.knownDuplicateName", name, sameSiteAttribute.getName().toLowerCase());
         }
-        MSP.debug("addSameSiteAttribute");
         //If this cookie name has already been added to the error list, do not attempt to
         //add it. Otherwise, check each set to confirm its uniqueness. If not unique,
         //remove it from the list, warn the user, and set the cookie as erroneous. Otherwise,
         //store the cookie under the respective list.
         if (!sameSiteErrorCookies.contains(name)) {
-            MSP.debug("addSameSiteAttribute 1 ");
             //Wildcard support is only supported for patterns ending on the * character. There cannot
             //be more than one * character in the string.
             if (name.endsWith(HttpConfigConstants.WILDCARD_CHAR) && name.indexOf(HttpConfigConstants.WILDCARD_CHAR) == name.lastIndexOf(HttpConfigConstants.WILDCARD_CHAR)) {
                 //Check that it isn't already defined with a different SameSite value
-                MSP.debug("addSameSiteAttribute 2 ");
                 if (this.sameSiteStringPatterns.containsKey(name) && !this.sameSiteStringPatterns.get(name).equals(sameSiteAttribute.getName())) {
                     this.sameSiteStringPatterns.remove(name);
                     Tr.warning(tc, "cookies.samesite.duplicateName", name, sameSiteAttribute.getName().toLowerCase());
@@ -1341,7 +1347,6 @@ public class HttpChannelConfig {
                     // If this is not a duplicate with the same value then add it, otherwise ignore the duplicate.
                     if (!this.sameSiteStringPatterns.containsKey(name)) {
                         this.sameSiteStringPatterns.put(name, sameSiteAttribute.getName());
-                        MSP.debug("addSameSiteAttribute 3");
                     } else {
                         if (TraceComponent.isAnyTracingEnabled() && tc.isEventEnabled()) {
                             Tr.event(tc, "The duplicate pattern: " + name + " was not added again to the: " + sameSiteAttribute.getName() + " list.");
@@ -2817,7 +2822,6 @@ public class HttpChannelConfig {
      * @return boolean
      */
     public boolean isAccessLoggingEnabled() {
-        MSP.log("getting access logger");
         return this.accessLogger.get().isStarted();
     }
 
@@ -3009,7 +3013,7 @@ public class HttpChannelConfig {
     }
 
     /*
-     * Returns a boolean which indicates whether Partitioned should be added to the SameSite=None cookies. 
+     * Returns a boolean which indicates whether Partitioned should be added to the SameSite=None cookies.
      */
     public boolean getPartitioned() {
         return this.isPartitioned;

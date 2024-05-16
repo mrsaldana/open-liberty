@@ -4,7 +4,7 @@
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-2.0/
- * 
+ *
  * SPDX-License-Identifier: EPL-2.0
  *******************************************************************************/
 package com.ibm.ws.http.channel.internal.cookies;
@@ -388,7 +388,7 @@ public class CookieUtils {
             buffer.append(value);
         }
 
-        if(ProductInfo.getBetaEdition()) {
+        if (ProductInfo.getBetaEdition()) {
             value = cookie.getAttribute("partitioned");
             if (null != value && !value.equalsIgnoreCase("false")) {
                 buffer.append("; Partitioned");
@@ -471,7 +471,7 @@ public class CookieUtils {
             buffer.append(value);
         }
 
-        if(ProductInfo.getBetaEdition()) {
+        if (ProductInfo.getBetaEdition()) {
             value = cookie.getAttribute("partitioned");
             if (null != value && !value.equalsIgnoreCase("false")) {
                 buffer.append("; Partitioned");
@@ -570,7 +570,7 @@ public class CookieUtils {
             buffer.append(value);
         }
 
-        if(ProductInfo.getBetaEdition()) {
+        if (ProductInfo.getBetaEdition()) {
             value = cookie.getAttribute("partitioned");
             if (null != value && !value.equalsIgnoreCase("false")) {
                 buffer.append("; Partitioned");
@@ -599,10 +599,10 @@ public class CookieUtils {
                 key = entry.getKey();
                 // add partitioned if not in beta.
                 // skip if in beta since it's added above already
-                if((key.equals("partitioned") && ProductInfo.getBetaEdition())){
+                if ((key.equals("partitioned") && ProductInfo.getBetaEdition())) {
                     continue;
                 }
-                if (!(key.equals("samesite") || key.equals("port") || key.equals("commenturl")) ) {
+                if (!(key.equals("samesite") || key.equals("port") || key.equals("commenturl"))) {
                     value = entry.getValue();
                     if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                         Tr.debug(tc, "setAttribute (" + key + " , " + value + ")");

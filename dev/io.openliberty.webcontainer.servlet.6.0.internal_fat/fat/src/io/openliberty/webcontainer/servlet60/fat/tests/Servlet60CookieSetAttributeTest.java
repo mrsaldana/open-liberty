@@ -211,7 +211,7 @@ public class Servlet60CookieSetAttributeTest {
     @Test
     public void test_setAttributePartitioned() throws Exception {
         String url = "http://" + server.getHostname() + ":" + server.getHttpDefaultPort() + "/" + TEST_APP_NAME + "/CookieSetAttributeServlet?testName=setAttributePartitioned";
-        String expectedSetCookie = "CookieSetAttributeServlet=TestSetAttributePartitioned; HttpOnly; SameSite=None; partitioned=";
+        String expectedSetCookie = "CookieSetAttributeServlet=TestSetAttributePartitioned; HttpOnly; SameSite=None; Partitioned";
 
         LOG.info("\n Sending Request [" + url + "]");
         HttpGet getMethod = new HttpGet(url);
@@ -237,8 +237,8 @@ public class Servlet60CookieSetAttributeTest {
 
     /*
      * Test null removes attributes
-     *     wcCookieAtt.setAttribute("TESTNAME", "");
-    *      wcCookieAtt.setAttribute("TESTNAME", null);
+     * wcCookieAtt.setAttribute("TESTNAME", "");
+     * wcCookieAtt.setAttribute("TESTNAME", null);
      */
     @Test
     public void test_nullValueRemovesAttribute() throws Exception {
