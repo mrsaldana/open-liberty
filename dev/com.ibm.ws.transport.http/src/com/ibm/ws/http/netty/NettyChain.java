@@ -223,8 +223,7 @@ public class NettyChain extends HttpChain {
                     httpOptions.put(HttpConfigConstants.PROPNAME_PROTOCOL_VERSION, owner.getProtocolVersion());
                 }
 
-                EndPointInfo info = endpointMgr.getEndPoint(this.endpointName);
-                info = endpointMgr.defineEndPoint(this.endpointName, currentConfig.configHost, currentConfig.configPort);
+                
 
                 Map<String, Object> tcpOptions = new HashMap<String, Object>();
                 MSP.log("Put " + ConfigConstants.EXTERNAL_NAME + " with value: " + endpointName);
@@ -233,16 +232,16 @@ public class NettyChain extends HttpChain {
                 tcpOptions.put(ConfigConstants.EXTERNAL_NAME, endpointName);
 
                 bootstrap = nettyFramework.createTCPBootstrap(tcpOptions);
-                HttpPipelineInitializer httpPipeline = new HttpPipelineInitializer.HttpPipelineBuilder(this).with(ConfigElement.COMPRESSION,
-                                                                                                                  owner.getCompressionConfig()).with(ConfigElement.HTTP_OPTIONS,
-                                                                                                                                                     httpOptions).with(ConfigElement.HEADERS,
-                                                                                                                                                                       owner.getHeadersConfig()).with(ConfigElement.REMOTE_IP,
-                                                                                                                                                                                                      owner.getRemoteIpConfig()).with(ConfigElement.SAMESITE,
-                                                                                                                                                                                                                                      owner.getSamesiteConfig()).build();
+                HttpPipelineInitializer httpPipeline = new HttpPipelineInitializer.HttpPipelineBuilder(this)
+                                .with(ConfigElement.COMPRESSION, owner.getCompressionConfig())
+                                .with(ConfigElement.HTTP_OPTIONS, httpOptions)
+                                .with(ConfigElement.HEADERS, owner.getHeadersConfig())
+                                .with(ConfigElement.REMOTE_IP,owner.getRemoteIpConfig())
+                                .with(ConfigElement.SAMESITE, owner.getSamesiteConfig()).build();
 
                 bootstrap.childHandler(httpPipeline);
 
-                channelFuture = nettyFramework.start(bootstrap, info.getHost(), info.getPort(), this::channelFutureHandler);
+                channelFuture = nettyFramework.start(bootstrap, currentConfig.getResolvedHost(), currentConfig.getConfigPort(), this::channelFutureHandler);
 
                 VirtualHostMap.notifyStarted(owner, () -> currentConfig.getResolvedHost(), currentConfig.getConfigPort(), isHttps);
                 String topic = owner.getEventTopic() + HttpServiceConstants.ENDPOINT_STARTED;
@@ -264,6 +263,8 @@ public class NettyChain extends HttpChain {
         if (future.isSuccess()) {
             serverChannel = future.channel();
             state.set(ChainState.STARTED);
+            EndPointInfo info = endpointMgr.getEndPoint(this.endpointName);
+            info = endpointMgr.defineEndPoint(this.endpointName, currentConfig.configHost, currentConfig.configPort);
 
             MSP.log("Channel is now active and listening on port " + getActivePort());
 
@@ -310,7 +311,13 @@ public class NettyChain extends HttpChain {
     }
 
     public EndPointInfo getEndpointInfo() {
-        return endpointMgr.getEndPoint(endpointName);
+        EndPointInfo info = endpointMgr.getEndPoint(endpointName);
+        
+        if(Objects.isNull(info) && state.get() == ChainState.STARTED) {
+            info = endpointMgr.defineEndPoint(this.endpointName, currentConfig.configHost, currentConfig.configPort);
+        }
+        
+        return info;
     }
 
     public String getEndpointPID() {
