@@ -222,8 +222,9 @@ public class NettyChain extends HttpChain {
                 if (owner.getProtocolVersion() != null) {
                     httpOptions.put(HttpConfigConstants.PROPNAME_PROTOCOL_VERSION, owner.getProtocolVersion());
                 }
-
                 
+                EndPointInfo info = endpointMgr.getEndPoint(this.endpointName);
+                info = endpointMgr.defineEndPoint(this.endpointName, currentConfig.configHost, currentConfig.configPort);
 
                 Map<String, Object> tcpOptions = new HashMap<String, Object>();
                 MSP.log("Put " + ConfigConstants.EXTERNAL_NAME + " with value: " + endpointName);
@@ -241,13 +242,9 @@ public class NettyChain extends HttpChain {
 
                 bootstrap.childHandler(httpPipeline);
 
-                channelFuture = nettyFramework.start(bootstrap, currentConfig.getResolvedHost(), currentConfig.getConfigPort(), this::channelFutureHandler);
-
-                VirtualHostMap.notifyStarted(owner, () -> currentConfig.getResolvedHost(), currentConfig.getConfigPort(), isHttps);
-                String topic = owner.getEventTopic() + HttpServiceConstants.ENDPOINT_STARTED;
-                postEvent(topic, currentConfig, null);
-
-                //channelFuture.get(10, TimeUnit.SECONDS);
+                channelFuture = nettyFramework.start(bootstrap, info.getHost(), info.getPort(), this::channelFutureHandler);
+                
+                
 
             } catch (Exception e) {
                 MSP.log("Failed to start NettyChannel: " + e.getMessage());
@@ -265,6 +262,9 @@ public class NettyChain extends HttpChain {
             state.set(ChainState.STARTED);
             EndPointInfo info = endpointMgr.getEndPoint(this.endpointName);
             info = endpointMgr.defineEndPoint(this.endpointName, currentConfig.configHost, currentConfig.configPort);
+            VirtualHostMap.notifyStarted(owner, () -> currentConfig.getResolvedHost(), currentConfig.getConfigPort(), isHttps);
+            String topic = owner.getEventTopic() + HttpServiceConstants.ENDPOINT_STARTED;
+            postEvent(topic, currentConfig, null);
 
             MSP.log("Channel is now active and listening on port " + getActivePort());
 
@@ -318,6 +318,7 @@ public class NettyChain extends HttpChain {
         }
         
         return info;
+     //   return endpointMgr.getEndPoint(endpointName);
     }
 
     public String getEndpointPID() {
