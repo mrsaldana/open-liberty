@@ -243,6 +243,10 @@ public class NettyChain extends HttpChain {
                 bootstrap.childHandler(httpPipeline);
 
                 channelFuture = nettyFramework.start(bootstrap, info.getHost(), info.getPort(), this::channelFutureHandler);
+
+                VirtualHostMap.notifyStarted(owner, () -> currentConfig.getResolvedHost(), currentConfig.getConfigPort(), isHttps);
+                String topic = owner.getEventTopic() + HttpServiceConstants.ENDPOINT_STARTED;
+                postEvent(topic, currentConfig, null);
                 
                 
 
@@ -262,9 +266,9 @@ public class NettyChain extends HttpChain {
             state.set(ChainState.STARTED);
             EndPointInfo info = endpointMgr.getEndPoint(this.endpointName);
             info = endpointMgr.defineEndPoint(this.endpointName, currentConfig.configHost, currentConfig.configPort);
-            VirtualHostMap.notifyStarted(owner, () -> currentConfig.getResolvedHost(), currentConfig.getConfigPort(), isHttps);
-            String topic = owner.getEventTopic() + HttpServiceConstants.ENDPOINT_STARTED;
-            postEvent(topic, currentConfig, null);
+            // VirtualHostMap.notifyStarted(owner, () -> currentConfig.getResolvedHost(), currentConfig.getConfigPort(), isHttps);
+            // String topic = owner.getEventTopic() + HttpServiceConstants.ENDPOINT_STARTED;
+            // postEvent(topic, currentConfig, null);
 
             MSP.log("Channel is now active and listening on port " + getActivePort());
 
