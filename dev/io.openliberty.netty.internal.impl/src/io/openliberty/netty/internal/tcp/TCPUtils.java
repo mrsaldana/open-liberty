@@ -126,15 +126,19 @@ public class TCPUtils {
 				// Listener to stop channel on close
 				// This should just log that the channel stopped
 				channel.closeFuture().addListener(innerFuture -> logChannelStopped(channel));
-
-				if(config.isInbound()) {
-					if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
-						Tr.debug(tc, "Adding new channel group for " + channel);
-					}
-					framework.getActiveChannelsMap().put(channel, new DefaultChannelGroup(GlobalEventExecutor.INSTANCE));
-				}else {
-					framework.getOutboundConnections().add(channel);
-				}
+        
+        if(config.isInbound()) {
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(tc, "Adding new channel group for " + channel);
+            }
+            synchronized (framework.getActiveChannelsMap()) {
+              framework.getActiveChannelsMap().put(channel, new DefaultChannelGroup(GlobalEventExecutor.INSTANCE));
+            }
+        } else {
+            synchronized (framework.getOutboundConnections()) {
+              framework.getOutboundConnections().add(channel);
+            }
+        }
 
 				// set up a helpful log message
 				String hostLogString = newHost;
@@ -186,6 +190,8 @@ public class TCPUtils {
 						Tr.debug(tc, "attempt to bind again after a wait of " + timeBetweenRetriesMsec + "ms; "
 								+ retryCount + " attempts remaining" + " for " + config.getExternalName());
 					}
+          //TODO: consider just doing this with a scheduled executor
+          //scheduledExecutorService.schedule() -> { open(...) else {
 					// recurse until we either complete successfully or run out of retries;
 					try {
 						Thread.sleep(timeBetweenRetriesMsec);
