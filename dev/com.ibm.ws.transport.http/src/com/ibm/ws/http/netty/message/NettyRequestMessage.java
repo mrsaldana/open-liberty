@@ -121,18 +121,19 @@ public class NettyRequestMessage extends NettyBaseMessage implements HttpRequest
         super.init(request, isc, config);
         setAndGetIsGrpc();
 //        verifyRequest();
-
-        System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-        System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-        System.out.println("HTTP Request:");
-        System.out.println("Method: " + request.method());
-        System.out.println("URI: " + request.uri());
-        System.out.println("Headers: ");
-        request.headers().forEach(header -> System.out.println(header.getKey() + ": " + header.getValue()));
-        System.out.println("Cookies: ");
-        this.getAllCookies().forEach(cookie -> System.out.println(cookie.toString()));
-        System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-        System.out.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        
+        MSP.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        MSP.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        MSP.log("HTTP Request:");
+        MSP.log("Method: " + request.method());
+        MSP.log("URI: " + request.uri());
+        MSP.log("Headers: ");
+        request.headers().forEach(header -> MSP.log(header.getKey() + ": " + header.getValue()));
+        MSP.log("Cookies: ");
+        this.getAllCookies().forEach(cookie -> MSP.log(cookie.toString()));
+        MSP.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        MSP.log("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        
     }
 
     /**
@@ -189,8 +190,6 @@ public class NettyRequestMessage extends NettyBaseMessage implements HttpRequest
             if ("application/grpc".equalsIgnoreCase(requestContentType)) {
 
                 String currentURL = request.uri();
-
-                System.out.println("Current url: " + currentURL);
 
                 String searchURL = currentURL;
                 searchURL = searchURL.substring(1);
@@ -341,8 +340,6 @@ public class NettyRequestMessage extends NettyBaseMessage implements HttpRequest
             //URI requestUri = new URL(request.uri()).toURI();
             URI requestUri = new URI(request.uri());
             // If it works it means we have an absolute URI and not a path
-            System.out.println("MSP: requestURI path is set to -> " + requestUri.getPath());
-            System.out.println("MSP: there is also the raw: " + requestUri.getRawPath());
             return requestUri.getRawPath();
             //   } catch (MalformedURLException e) {
             //  return query.path();
@@ -772,8 +769,6 @@ public class NettyRequestMessage extends NettyBaseMessage implements HttpRequest
     public List<HttpCookie> getAllCookies() {
         List<HttpCookie> list = new LinkedList<HttpCookie>();
         String cookieString = headers.get(HttpHeaders.Names.COOKIE);
-        System.out.println("MSP getAllCookies -> " + cookieString);
-
         return com.ibm.ws.http.netty.cookie.CookieDecoder.decode(cookieString);
 
     }

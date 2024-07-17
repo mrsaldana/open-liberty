@@ -251,6 +251,7 @@ public class HttpEndpointImpl implements RuntimeUpdateListener, PauseableCompone
 
     @Activate
     protected void activate(ComponentContext ctx, Map<String, Object> config) {
+        
         cid = config.get(ComponentConstants.COMPONENT_ID);
         name = (String) config.get("id");
         pid = (String) config.get(Constants.SERVICE_PID);
@@ -281,15 +282,19 @@ public class HttpEndpointImpl implements RuntimeUpdateListener, PauseableCompone
 
         //useNetty = MetatypeUtils.parseBoolean(config, NettyConstants.USE_NETTY, config.get(NettyConstants.USE_NETTY), false);
         if (useNetty) {
-            httpChain = new NettyChain(this, false);
-            httpSecureChain = new NettyChain(this, true);
+            if(httpChain == null || !(httpChain instanceof NettyChain)) {
+                httpChain = new NettyChain(this, false);
+                httpSecureChain = new NettyChain(this, true);
+            }
 
             ((NettyChain) httpChain).initNettyChain(name, netty);
             ((NettyChain) httpSecureChain).initNettyChain(name, netty);
 
         } else {
-            httpChain = new HttpChain(this, false);
-            httpSecureChain = new HttpChain(this, true);
+            if(httpChain == null || httpChain instanceof NettyChain) {
+                httpChain = new HttpChain(this, false);
+                httpSecureChain = new HttpChain(this, true);
+            }
 
             httpChain.init(name, cid, chfw);
             httpSecureChain.init(name, cid, chfw);
@@ -557,7 +562,9 @@ public class HttpEndpointImpl implements RuntimeUpdateListener, PauseableCompone
         }
         sslFactoryProvider.setReference(ref);
 
-        if (endpointConfig != null) {
+        // TODO Add logic to verify no Netty TLS provider is needed to start up the chain
+        // if Netty is not enabled on this endpoint
+        if (endpointConfig != null && nettyTlsProvider != null) {
             httpSecureChain.enable();
             // If this is post-activate, drive the update action
             performAction(updateAction);
@@ -905,10 +912,14 @@ public class HttpEndpointImpl implements RuntimeUpdateListener, PauseableCompone
         return netty;
     }
 
-    @Reference(name = "nettyTlsProvider", cardinality = ReferenceCardinality.OPTIONAL, policyOption = ReferencePolicyOption.GREEDY, unbind = "unbindTlsProviderService")
+    @Reference(name = "nettyTlsProvider", policy = ReferencePolicy.DYNAMIC, cardinality = ReferenceCardinality.OPTIONAL, policyOption = ReferencePolicyOption.GREEDY, unbind = "unbindTlsProviderService")
     protected void bindNettyTlsProvider(NettyTlsProvider tlsProvider) {
-        System.out.println("Setting Netty TLS provider");
         this.nettyTlsProvider = tlsProvider;
+        if (endpointConfig != null && sslFactoryProvider.getReference() != null) {
+            httpSecureChain.enable();
+            // If this is post-activate, drive the update action
+            performAction(updateAction);
+        }
     }
 
     protected void unbindTlsProviderService(NettyTlsProvider bundle) {
