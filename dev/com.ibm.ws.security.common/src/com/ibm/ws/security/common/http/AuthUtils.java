@@ -50,8 +50,24 @@ public class AuthUtils {
             return rawHeaderValue;
         }
         if (scheme != null) {
-            if (rawHeaderValue.startsWith(scheme)) {
-                return rawHeaderValue.substring(scheme.length()).trim();
+            String schemeTrimmed = scheme.trim(); // Remove any trailing spaces from the scheme
+            int schemeLength = schemeTrimmed.length();
+
+            if (rawHeaderValue.equalsIgnoreCase(schemeTrimmed)) {
+                // No token is present
+                return "";
+            }
+
+            if (rawHeaderValue.length() > schemeLength &&
+                rawHeaderValue.regionMatches(true, 0, schemeTrimmed, 0, schemeLength)) {
+
+                // Check if the character after the scheme is whitespace
+                char charAfterScheme = rawHeaderValue.charAt(schemeLength);
+                if (Character.isWhitespace(charAfterScheme)) {
+                    // Extract the token after the whitespace
+                    String token = rawHeaderValue.substring(schemeLength + 1).trim();
+                    return token;
+                }
             }
         }
         return rawHeaderValue;

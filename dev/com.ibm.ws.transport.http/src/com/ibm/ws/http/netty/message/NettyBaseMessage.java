@@ -217,7 +217,16 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
 
     @Override
     public HeaderField getHeader(String name) {
-        return new NettyHeader(name, headers);
+        Objects.requireNonNull(name, "Header name cannot be null");
+        String value = headers.get(name);
+        if(value != null){
+            if (value.isEmpty()) { 
+                value = null;
+            }
+
+            return new NettyHeader(name, value);
+        }
+        return NettyHeader.NULL_HEADER;
     }
 
     @Override
@@ -227,7 +236,7 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
 
     @Override
     public HeaderField getHeader(HeaderKeys name) {
-        return new NettyHeader(name, headers);
+        return getHeader(name.getName());
     }
 
     @Override
