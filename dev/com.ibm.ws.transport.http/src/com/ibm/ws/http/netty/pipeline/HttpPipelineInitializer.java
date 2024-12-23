@@ -53,6 +53,8 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.util.ReferenceCountUtil;
+import io.openliberty.http.netty.channel.AllocatorContextSetter;
+import io.openliberty.http.netty.channel.LoggingRecvByteBufAllocator;
 import io.openliberty.netty.internal.ChannelInitializerWrapper;
 import io.openliberty.netty.internal.exception.NettyException;
 import io.openliberty.netty.internal.impl.NettyConstants;
@@ -118,7 +120,7 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         LoggingRecvByteBufAllocator loggingAllocator = new LoggingRecvByteBufAllocator(channelAllocator);
         channel.config().setRecvByteBufAllocator(loggingAllocator);
 
-        pipeline.addLast("AllocatorContextSetter", new AllocatorContextSetter(loggingAllocator));
+        pipeline.addLast("AllocatorContextSetter", new AllocatorContextSetter());
 
         if(chain.isHttps()){
             setupSecurePipeline(pipeline);
@@ -376,24 +378,4 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         this.httpConfig.clear();
 
     }
-
-    @Sharable
-    private static class AllocatorContextSetter extends ChannelInboundHandlerAdapter{
-        private final LoggingRecvByteBufAllocator loggingAllocator;
-
-        AllocatorContextSetter(LoggingRecvByteBufAllocator loggingAllocator){
-            this.loggingAllocator = loggingAllocator;
-        }
-
-        @Override
-        public void handlerAdded(ChannelHandlerContext context) throws Exception{
-            super.handlerAdded(context);
-
-            RecvByteBufAllocator.Handle handle = context.channel().unsafe().recvBufAllocHandle();
-            if(handle instanceof LoggingRecvByteBufAllocator.LoggingHandle){
-                ((LoggingRecvByteBufAllocator.LoggingHandle) handle).setChannelHandlerContext(context);
-            }
-        }
-    }
-
 }
