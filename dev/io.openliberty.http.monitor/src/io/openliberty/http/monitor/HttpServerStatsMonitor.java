@@ -148,7 +148,7 @@ public class HttpServerStatsMonitor extends StatisticActions {
 				StatusCodes statCode = (StatusCodes) myargs[0];
 				
 				builder.withResponseStatus(statCode.getIntCode());
-				is4xxCode = (statCode.getIntCode() % 400 <= 99 ) ? true : false;
+				is4xxCode = (statCode.getIntCode() % 400 <= 99 );
 			}
 
 			if (myargs[2] != null && myargs[2] instanceof Exception) {
