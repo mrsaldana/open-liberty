@@ -68,24 +68,36 @@ public class ProtocolHelper {
         String[] protocols = sslProtocol.split(",");
 
         List<String> allowedProtocols;
-        if (CryptoUtils.isFips140_3Enabled()) {
+        boolean fips140_3Enabled = CryptoUtils.isFips140_3Enabled();
+        if (fips140_3Enabled) {
             Tr.debug(tc, "FIPS is enabled, only allowing TLSv1.2 and TLSv1.3");
             allowedProtocols = Constants.FIPS_140_3_PROTOCOLS;
         } else {
             allowedProtocols = Constants.MULTI_PROTOCOL_LIST;
         }
 
-        for (String protocol : protocols) {
-            if (allowedProtocols.contains(protocol)) {
-                if (validatedProtocols.contains(protocol))
-                    continue;
-                else {
-                    checkProtocol(protocol);
-                    validatedProtocols.add(protocol);
+        if (protocols.length > 1) {
+            for (String protocol : protocols) {
+                if (allowedProtocols.contains(protocol)) {
+                    if (validatedProtocols.contains(protocol))
+                        continue;
+                    else {
+                        checkProtocol(protocol);
+                        validatedProtocols.add(protocol);
+                    }
+                } else {
+                    Tr.error(tc, "ssl.protocol.error.CWPKI0832E", protocol);
+                    throw new SSLException("Protocol provided is not appropriate for a protocol list.");
                 }
-            } else {
-                Tr.error(tc, "ssl.protocol.error.CWPKI0832E", protocol);
-                throw new SSLException("Protocol provided is not appropriate for a protocol list.");
+            }
+        } else {
+            String protocol = protocols[0];
+            if (!validatedProtocols.contains(protocol)) {
+                if (fips140_3Enabled && !allowedProtocols.contains(protocol)) {
+                    Tr.error(tc, "ssl.protocol.error.CWPKI0832E", protocol);
+                    throw new SSLException("Protocol provided is not appropriate for a protocol list.");
+                }
+                checkProtocol(protocol);
             }
         }
 
