@@ -11,7 +11,7 @@
 bVersion=1.0
 
 grpcVersion=1.57.2
-nettyVersion=4.1.109.Final
+nettyVersion=4.1.116.Final
 
 
 src: \
