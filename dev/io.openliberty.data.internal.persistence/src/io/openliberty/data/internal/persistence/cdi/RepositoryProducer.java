@@ -157,7 +157,7 @@ public class RepositoryProducer<R> implements Producer<R>, ProducerFactory<R>, B
         queriesPerEntityClass.forEach((entityClass, queries) -> {
             writer.println();
             if (QueryInfo.ENTITY_TBD.equals(entityClass))
-                writer.println(indent + "  Queries for entity determined from Query value:");
+                writer.println(indent + "  Queries for entity to be determined:");
             else
                 writer.println(indent + "  Queries for entity " + entityClass.getName() + ':');
 

@@ -69,6 +69,15 @@ public class DataIntrospectorTest extends FATServletClient {
     }
 
     /**
+     * Verify that introspector output contains the entity class that is used
+     * by the repository.
+     */
+    @Test
+    public void testOutputContainsCauseOfException() {
+        assertLineFound("        Caused by: javax.naming.NameNotFoundException: AbsentFromConfig");
+    }
+
+    /**
      * Verify that introspector output contains the config display id of
      * databaseStore elements that are used by repositories.
      */
@@ -137,5 +146,24 @@ public class DataIntrospectorTest extends FATServletClient {
         assertLineFound("      repository: test.jakarta.data.errpaths.web.RepoWithoutDataStore");
         assertLineFound("      repository: test.jakarta.data.errpaths.web.Voters");
         assertLineFound("      repository: test.jakarta.data.errpaths.web.WrongPersistenceUnitRefRepo");
+    }
+
+    /**
+     * Verify that introspector output contains the Repository annotation.
+     */
+    @Test
+    public void testOutputContainsRepositoryAnnotation() {
+        assertLineFound("      @Repository(dataStore=\"java:app/jdbc/DerbyDataSource\", provider=\"\")");
+    }
+
+    /**
+     * Verify that introspector output contains the signature of repository methods.
+     */
+    @Test
+    public void testOutputContainsRepositoryMethodSignature() {
+        assertLineFound("        @Find");
+        assertLineFound("        public abstract java.util.List<Voter> livesAt(" +
+                        "@By(\"address\") java.lang.String, jakarta.data.Limit, " +
+                        "jakarta.data.Order<Voter>, jakarta.data.Limit) ");
     }
 }
