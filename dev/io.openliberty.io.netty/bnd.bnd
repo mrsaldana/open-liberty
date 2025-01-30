@@ -24,6 +24,7 @@ src: src
 Import-Package: \
   !com.aayushatharva.brotli4j*,\
   !com.github.luben.zstd,\
+  !com.github.luben.zstd.util,\
   !com.google.protobuf*,\
   !com.jcraft.jzlib,\
   !com.ning.*,\
