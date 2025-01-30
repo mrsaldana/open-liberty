@@ -2052,7 +2052,7 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
                 // if all expected body bytes will be written out, set the end of stream flag
                 addBytesWritten(length);
                 boolean addEndOfStream = false;
-                if (msg.getContentLength() == getNumBytesWritten()) {
+                if (!link.setAndGetIsGrpc() && msg.getContentLength() == getNumBytesWritten()) {
                     addEndOfStream = true;
                 }
 
