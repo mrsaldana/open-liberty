@@ -78,6 +78,16 @@ public class DataIntrospectorTest extends FATServletClient {
     }
 
     /**
+     * Verify the introspector output contains a count query that is used to
+     * find the number of total elements across all pages.
+     */
+    @Test
+    public void testOutputContainsCountQueryForPages() {
+        assertLineFound("    JPQL count query: " +
+                        "SELECT COUNT(o) FROM Voter o WHERE (o.address=?1)");
+    }
+
+    /**
      * Verify that introspector output contains the config display id of
      * databaseStore elements that are used by repositories.
      */
@@ -125,6 +135,14 @@ public class DataIntrospectorTest extends FATServletClient {
     }
 
     /**
+     * Verify that the introspector output contains the names of JPQL named parameters.
+     */
+    @Test
+    public void testOutputContainsJPQLNamedParameterNames() {
+        assertLineFound("    JPQL parameter names: [lname]");
+    }
+
+    /**
      * Verify that introspector output contains the name of the primary entity class.
      */
     @Test
@@ -154,6 +172,16 @@ public class DataIntrospectorTest extends FATServletClient {
     @Test
     public void testOutputContainsRepositoryAnnotation() {
         assertLineFound("      @Repository(dataStore=\"java:app/jdbc/DerbyDataSource\", provider=\"\")");
+    }
+
+    /**
+     * Verify that introspector output contains the result type of a repository method.
+     */
+    @Test
+    public void testOutputContainsRepositoryMethodResultType() {
+        assertLineFound("    return array type: test.jakarta.data.errpaths.web.Voter");
+        assertLineFound("    multiple result type: [Ltest.jakarta.data.errpaths.web.Voter;");
+        assertLineFound("    single result type: test.jakarta.data.errpaths.web.Voter");
     }
 
     /**

@@ -264,15 +264,19 @@ public class Util {
     }
 
     /**
-     * Print the string, adding indentation after end-of-line characters.
-     * Indentation is not added before the first line.
+     * Print the string, adding indentation after end-of-line characters that are
+     * within the string. Indentation is not added before the first line.
      *
      * @param s      string to print, which might have end-of-line characters.
      * @param writer writer for output.
      * @param indent indentation for lines.
      */
     @Trivial
-    private static void printIndented(String s, PrintWriter writer, String indent) {
+    public static void printlnIndented(String s, PrintWriter writer, String indent) {
+        if (s == null) {
+            writer.println("null");
+            return;
+        }
         int start = 0, eoln;
         while ((eoln = s.indexOf(EOLN, start)) >= 0) {
             writer.print(s.substring(start, eoln));
@@ -280,7 +284,7 @@ public class Util {
             writer.print(indent);
             start = eoln + EOLN.length();
         }
-        writer.print(s.substring(start, s.length()));
+        writer.println(s.substring(start, s.length()));
     }
 
     /**
@@ -311,8 +315,7 @@ public class Util {
                 else if (suppressedIgnores != null)
                     writer.print("Suppressed: ");
 
-                printIndented(cause.toString(), writer, indent + "  ");
-                writer.println();
+                printlnIndented(cause.toString(), writer, indent + "  ");
 
                 for (StackTraceElement e : cause.getStackTrace())
                     writer.println(indent + "  at " + e.toString());
