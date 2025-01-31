@@ -38,6 +38,28 @@ public class DataIntrospectorTest extends FATServletClient {
     static final List<String> introspectorOutput = new ArrayList<>();
 
     /**
+     * Asserts that a line containing the expected substring is found
+     * within the Jakarta Data introspector output.
+     *
+     * @param expected the line to search for.
+     */
+    private static void assertLineContains(String expectedSubstring) {
+        if (introspectorOutput.isEmpty())
+            fail("JakartaDataIntrospector output not found. Unable to run test. " +
+                 "Check server logs for errors.");
+
+        for (String line : introspectorOutput)
+            if (line.contains(expectedSubstring))
+                return;
+
+        fail("Substring not found within introspector output. " +
+             "To view introspector output from the test results page, " +
+             "follow the System.out link and then search for " +
+             "testIntrospectorOutputObtained. Missing substring is: " +
+             expectedSubstring);
+    }
+
+    /**
      * Asserts that a line is found within the Jakarta Data introspector output.
      *
      * @param expected the line to search for.
@@ -171,7 +193,9 @@ public class DataIntrospectorTest extends FATServletClient {
      */
     @Test
     public void testOutputContainsRepositoryAnnotation() {
-        assertLineFound("      @Repository(dataStore=\"java:app/jdbc/DerbyDataSource\", provider=\"\")");
+        // fields of the annotation could be printed in any order
+        assertLineContains("      @Repository(");
+        assertLineContains("dataStore=\"java:app/jdbc/DerbyDataSource\"");
     }
 
     /**
