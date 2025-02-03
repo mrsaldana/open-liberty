@@ -4848,7 +4848,7 @@ public class QueryInfo {
 
         Object entity = o;
         Class<?> oClass = o.getClass();
-        if (o != null && oClass.isRecord())
+        if (oClass.isRecord())
             try {
                 Class<?> entityClass = oClass.getClassLoader() //
                                 .loadClass(oClass.getName() + "Entity");
