@@ -3332,14 +3332,10 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
                                                                                                             "-1")), trailers);
             }
             this.nettyContext.channel().write(lastContent);
-        } else {
-        }
+        } 
         ChannelFuture flushFuture = this.nettyContext.channel().writeAndFlush(Unpooled.EMPTY_BUFFER);
-        CountDownLatch writeAndFlushLatch = new CountDownLatch(1);
-        flushFuture.addListener(new ChannelFutureListener() {
-
-            @Override
-            public void operationComplete(ChannelFuture future) throws Exception {
+        flushFuture.addListener(f -> {
+            if (f.isSuccess()) {
                 if (nettyContext.pipeline().get(LibertyHttpRequestHandler.class) == null) {
                     if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                         Tr.debug(this, tc, "Could not verify pipelined request because of null handler on channel: " + nettyContext.channel() + " Is this HTTP2?");
@@ -3347,17 +3343,27 @@ public abstract class HttpServiceContextImpl implements HttpServiceContext, FFDC
                 } else {
                     nettyContext.pipeline().get(LibertyHttpRequestHandler.class).processNextRequest();
                 }
-                writeAndFlushLatch.countDown();
+            } else {
+                // handle error
             }
         });
-        // Sync write data here so need to wait for flush to finish
-        try {
-            writeAndFlushLatch.await();
-        } catch (InterruptedException e) {
-            // TODO should we do something with this exception?
-            e.printStackTrace();
-        }
         setMessageSent();
+    //     flushFuture.addListener(new ChannelFutureListener() {
+
+    //         @Override
+    //         public void operationComplete(ChannelFuture arg0) throws Exception {
+
+    //             if (nettyContext.pipeline().get(LibertyHttpRequestHandler.class) == null) {
+    //                 if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+    //                     Tr.debug(this, tc, "Could not verify pipelined request because of null handler on channel: " + nettyContext.channel() + " Is this HTTP2?");
+    //                 }
+    //             } else {
+    //                 nettyContext.pipeline().get(LibertyHttpRequestHandler.class).processNextRequest();
+    //             }
+    //         }
+    //     });
+    //     flushFuture.awaitUninterruptibly();
+    //     setMessageSent();
     }
 
     /**
