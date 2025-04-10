@@ -13,9 +13,12 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.AbstractMap;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -46,6 +49,7 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
 
     private static final TraceComponent tc = Tr.register(NettyTCPWriteRequestContext.class, HttpMessages.HTTP_TRACE_NAME, HttpMessages.HTTP_BUNDLE);
 
+
     private final NettyTCPConnectionContext connectionContext;
     private final Channel nettyChannel;
 
@@ -58,6 +62,8 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
     private final ByteBuffer byteBufferArrayOf2[] = null;
     private final ByteBuffer byteBufferArrayOf3[] = null;
     private final ByteBuffer byteBufferArrayOf4[] = null;
+
+    private final BlockingWriteQueue sharedQueue;
 
     private VirtualConnection vc;
     private String streamID = "-1";
@@ -75,6 +81,7 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
 
         this.connectionContext = connectionContext;
         this.nettyChannel = nettyChannel;
+        sharedQueue = SharedWriter.getOrCreateQueue(nettyChannel);
     }
 
     @Override
@@ -109,7 +116,7 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
                     Integer.valueOf(streamID),
                     HttpDispatcher.getBufferManager().wrap(WsByteBufferUtils.asByteArray(buffer))
                 );
-                return nettyChannel.writeAndFlush(entry);
+                return nettyChannel.write(entry);
 
             }
             case CONTENT_LENGTH: {
@@ -119,7 +126,7 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
             }
             case CHUNKED : {
                 ChunkedInput<ByteBuf> chunkedInput = new WsByteBufferChunkedInput(buffer);
-                return nettyChannel.writeAndFlush(chunkedInput);
+                return nettyChannel.write(chunkedInput);
 
             }
             default: {
@@ -251,6 +258,34 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
 
     }
 
+    private boolean waitForWritable(int timeout) throws IOException{
+        long start = System.currentTimeMillis();
+        while(!nettyChannel.isWritable()){
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e){
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted waiting for writeability");
+            }
+            if(timeout != NO_TIMEOUT){
+                if(System.currentTimeMillis() - start > timeout){
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    private int convertTimeout(int timeout){
+        if(timeout == USE_CHANNEL_TIMEOUT){
+            return DEFAULT_CHANNEL_TIMEOUT;
+
+        }else if(timeout == NO_TIMEOUT){
+            return 0;
+        }
+        return timeout;
+    }
+
     @Override
     public long write(long numBytes, int timeout) throws IOException {
 
@@ -261,57 +296,80 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
             );
         }
 
+
+
         long totalBytesWritten = 0;
         WriteMode mode = determineMode();
 
-        ChannelFuture lastWriteFuture = null;
-        for (WsByteBuffer buffer: buffers){
-            if(Objects.nonNull(buffer) && buffer.hasRemaining()){
-                lastWriteFuture = writeBuffer(buffer, mode);
-                totalBytesWritten += buffer.remaining();
+        if(buffers != null){
+            for(WsByteBuffer buffer: buffers){
+                if(buffer != null && buffer.hasRemaining()){
+                    int actualTimeout = convertTimeout(timeout);
+                    WriteTask task = new WriteTask(buffer, actualTimeout);
+                    sharedQueue.addTask(task);
+
+                    long written = task.awaitCompletion();
+                    totalBytesWritten += written;
+                }
             }
         }
 
-        if (Objects.isNull(lastWriteFuture)){
-            return 0;
-        }
+        // ChannelFuture lastWriteFuture = null;
+        // for (WsByteBuffer buffer: buffers){
+        //     if(Objects.nonNull(buffer) && buffer.hasRemaining()){
 
-        if(mode == WriteMode.HTTP2 || mode == WriteMode.CONTENT_LENGTH){
-            lastWriteFuture = nettyChannel.writeAndFlush(Unpooled.EMPTY_BUFFER);
-        }
+        //         if(!nettyChannel.isWritable()){
+        //             boolean becameWriteable = waitForWritable(timeout);
+        //             if(!becameWriteable){
+        //                 throw new IOException("Channel stayed non-writeable and timed out");
+        //             }
+        //         }
 
-        if(timeout == IMMED_TIMEOUT){
-            if(!lastWriteFuture.isDone()){
-                return totalBytesWritten;
-            }
 
-        } else {
-            try{
+        //         lastWriteFuture = writeBuffer(buffer, mode);
+        //         totalBytesWritten += buffer.remaining();
+        //     }
+        // }
 
-                if(timeout == USE_CHANNEL_TIMEOUT){
-                    timeout = DEFAULT_CHANNEL_TIMEOUT;
-                }
+        // if (Objects.isNull(lastWriteFuture)){
+        //     return 0;
+        // }
 
-                boolean isDone;
-                if(timeout == NO_TIMEOUT){
-                    lastWriteFuture.sync();
-                    isDone = true;
-                } else {
-                    isDone = lastWriteFuture.await(timeout, TimeUnit.MILLISECONDS);
-                }
+        // lastWriteFuture = nettyChannel.writeAndFlush(Unpooled.EMPTY_BUFFER);
 
-                if(!isDone){
-                    throw new IOException("Write operation timed out");
-                }
-                if(!lastWriteFuture.isSuccess()){
-                    throw new IOException("Write operation failed", lastWriteFuture.cause());
-                }
 
-            } catch (InterruptedException e){
-                Thread.currentThread().interrupt();
-                throw new IOException("Write timeout detected while waiting on write", e);
-            }
-        }
+        // if(timeout == IMMED_TIMEOUT){
+        //     if(!lastWriteFuture.isDone()){
+        //         return totalBytesWritten;
+        //     }
+
+        // } else {
+        //     try{
+
+        //         if(timeout == USE_CHANNEL_TIMEOUT){
+        //             timeout = DEFAULT_CHANNEL_TIMEOUT;
+        //         }
+
+        //         boolean isDone;
+        //         if(timeout == NO_TIMEOUT){
+        //             lastWriteFuture.sync();
+        //             isDone = true;
+        //         } else {
+        //             isDone = lastWriteFuture.await(timeout, TimeUnit.MILLISECONDS);
+        //         }
+
+        //         if(!isDone){
+        //             throw new IOException("Write operation timed out");
+        //         }
+        //         if(!lastWriteFuture.isSuccess()){
+        //             throw new IOException("Write operation failed", lastWriteFuture.cause());
+        //         }
+
+        //     } catch (InterruptedException e){
+        //         Thread.currentThread().interrupt();
+        //         throw new IOException("Write timeout detected while waiting on write", e);
+        //     }
+        // }
 
         return totalBytesWritten;
 
@@ -417,9 +475,7 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
             return vc;
         }
 
-        if(mode == WriteMode.HTTP2 || mode == WriteMode.CONTENT_LENGTH){
-            lastWriteFuture = nettyChannel.writeAndFlush(Unpooled.EMPTY_BUFFER);
-        }
+        lastWriteFuture = nettyChannel.writeAndFlush(Unpooled.EMPTY_BUFFER);
 
         lastWriteFuture.addListener((ChannelFutureListener) future -> {
             if(future.isSuccess()){
@@ -431,6 +487,19 @@ public class NettyTCPWriteRequestContext implements TCPWriteRequestContext {
 
         return vc;
     }
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
     
 }
 

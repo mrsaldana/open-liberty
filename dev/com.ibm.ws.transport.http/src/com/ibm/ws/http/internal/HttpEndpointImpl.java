@@ -52,6 +52,7 @@ import com.ibm.ws.http.internal.HttpChain.ChainState;
 import com.ibm.ws.http.logging.internal.AccessLogger;
 import com.ibm.ws.http.logging.internal.DisabledLogger;
 import com.ibm.ws.http.netty.NettyChain;
+import com.ibm.ws.http.netty.inbound.SharedWriter;
 import com.ibm.ws.kernel.launch.service.PauseableComponent;
 import com.ibm.ws.kernel.launch.service.PauseableComponentException;
 import com.ibm.ws.kernel.productinfo.ProductInfo;
@@ -611,7 +612,6 @@ public class HttpEndpointImpl implements RuntimeUpdateListener, PauseableCompone
 
         try {
             Bundle bundle = bundleContext.getBundle(Constants.SYSTEM_BUNDLE_LOCATION);
-
             if (bundle != null)
                 bundle.stop();
         } catch (Exception e) {

@@ -26,6 +26,7 @@ import com.ibm.ws.http.internal.HttpChain.ChainState;
 import com.ibm.ws.http.internal.HttpEndpointImpl;
 import com.ibm.ws.http.internal.HttpServiceConstants;
 import com.ibm.ws.http.internal.VirtualHostMap;
+import com.ibm.ws.http.netty.inbound.SharedWriter;
 import com.ibm.ws.http.netty.pipeline.HttpPipelineInitializer;
 import com.ibm.ws.http.netty.pipeline.HttpPipelineInitializer.ConfigElement;
 import com.ibm.wsspi.channelfw.VirtualConnection;
@@ -123,6 +124,7 @@ public class NettyChain extends HttpChain {
                 postEvent(topic, currentConfig, null);
 
                 state.set(ChainState.STOPPED);
+                SharedWriter.shutdown();
                 notifyAll();
             }
         } else {
