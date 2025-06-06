@@ -123,7 +123,7 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         LoggingRecvByteBufAllocator loggingAllocator = new LoggingRecvByteBufAllocator(channelAllocator);
         channel.config().setRecvByteBufAllocator(loggingAllocator);
 
-        pipeline.addLast("AllocatorContextSetter", new AllocatorContextSetter());
+        pipeline.addLast("AllocatorContextSetter", AllocatorContextSetter.INSTANCE);
 
         pipeline.addLast("writeTimeoutHandler", new WriteTimeoutHandler(httpConfig.getWriteTimeout(), TimeUnit.MILLISECONDS));
 
@@ -302,7 +302,10 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
             pipeline.addAfter(HTTP_AGGREGATOR_HANDLER_NAME, HTTP_REQUEST_HANDLER_NAME, new LibertyHttpRequestHandler());
         }
 
-        pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, "transportInboundHandler", new TransportInboundHandler(httpConfig));
+        
+        pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, "chunkWriteHandler", new ChunkedWriteHandler());
+        pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new ByteBufferCodec());
+        pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new TransportInboundHandler(httpConfig));
         pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new TransportOutboundHandler(httpConfig));
         if (httpConfig.useForwardingHeaders()) {
             pipeline.addBefore(HTTP_DISPATCHER_HANDLER_NAME, null, new RemoteIpHandler(httpConfig));
