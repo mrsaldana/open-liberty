@@ -122,7 +122,7 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         LoggingRecvByteBufAllocator loggingAllocator = new LoggingRecvByteBufAllocator(channelAllocator);
         channel.config().setRecvByteBufAllocator(loggingAllocator);
 
-        pipeline.addLast("AllocatorContextSetter", new AllocatorContextSetter());
+        pipeline.addLast("AllocatorContextSetter", AllocatorContextSetter.INSTANCE);
 
         pipeline.addLast("writeTimeoutHandler", new WriteTimeoutHandler(httpConfig.getWriteTimeout(), TimeUnit.MILLISECONDS));
 
