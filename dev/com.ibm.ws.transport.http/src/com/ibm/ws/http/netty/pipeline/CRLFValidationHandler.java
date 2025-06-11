@@ -12,6 +12,7 @@ package com.ibm.ws.http.netty.pipeline;
 import com.ibm.ws.http.netty.NettyHttpConstants;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 
