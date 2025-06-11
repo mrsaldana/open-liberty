@@ -51,8 +51,8 @@ public class ByteBufferCodec extends ChannelDuplexHandler {
 
         }
         Object wsBuffer = ChannelFrameworkFactory.getBufferManager().wrap(in.nioBuffer(in.readerIndex(), readable));
-        in.skipBytes(readable);
-        in.release();
+        // in.skipBytes(readable);
+        // in.release();
 
         context.fireChannelRead(wsBuffer);
     }
