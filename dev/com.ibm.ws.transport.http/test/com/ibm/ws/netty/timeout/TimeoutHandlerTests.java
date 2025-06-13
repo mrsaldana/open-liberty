@@ -9,9 +9,8 @@
  *******************************************************************************/
 package com.ibm.ws.netty.timeout;
 
-import java.util.concurrent.TimeUnit;
-
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -25,6 +24,10 @@ import io.openliberty.http.netty.timeout.exception.PersistTimeoutException;
 import io.openliberty.http.netty.timeout.exception.ReadTimeoutException;
 import io.openliberty.http.netty.timeout.exception.UnknownTimeoutException;
 
+import java.lang.reflect.Field;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.Assert.*;
 import org.junit.Test;
 import static org.mockito.Mockito.*;
@@ -35,14 +38,14 @@ import com.ibm.ws.http.netty.NettyHttpChannelConfig;
 public class TimeoutHandlerTests {
 
     @Test
-    public void readTimeoutExceptionMessageTest(){
+    public void readTimeoutExceptionMessageTest() {
         ReadTimeoutException exception = new ReadTimeoutException(5, TimeUnit.SECONDS);
         //TODO warning code -> assertEquals("", exception.getMessage());
         assertTrue(exception.getMessage().contains("5 seconds"));
     }
 
     @Test
-    public void idleHandlerReadTimeout(){
+    public void idleHandlerReadTimeout() {
         TimeoutEventHandler handler = new TimeoutEventHandler(TimeoutType.READ, 1, TimeUnit.SECONDS);
         EmbeddedChannel channel = new EmbeddedChannel(handler);
 
@@ -55,18 +58,18 @@ public class TimeoutHandlerTests {
     }
 
     @Test
-    public void readTimeoutHandlerOnActive(){
+    public void readTimeoutHandlerOnActive() {
         NettyHttpChannelConfig config = mock(NettyHttpChannelConfig.class);
         when(config.getReadTimeout()).thenReturn(1000);
         when(config.getPersistTimeout()).thenReturn(1000);
 
         TimeoutHandler handler = new TimeoutHandler(config);
         EmbeddedChannel channel = new EmbeddedChannel(handler);
-        assertNotNull("Request Idle handler is missing.", channel.pipeline().get("requestIdleHandler"));
+        assertNotNull("Request Idle handler is missing.", channel.pipeline().get(TimeoutHandler.class));
     }
 
     @Test
-    public void timeoutHandlerSwitchToPersist(){
+    public void timeoutHandlerSwitchToPersist() throws Exception {
         NettyHttpChannelConfig config = mock(NettyHttpChannelConfig.class);
         when(config.getReadTimeout()).thenReturn(2000);
         when(config.getPersistTimeout()).thenReturn(1000);
@@ -74,24 +77,29 @@ public class TimeoutHandlerTests {
         EmbeddedChannel channel = new EmbeddedChannel(handler);
 
         DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, Unpooled.EMPTY_BUFFER);
-        channel.writeOutbound(response);
+        ChannelFuture future = channel.writeAndFlush(response);
+        channel.runPendingTasks();
+        assertTrue(future.isSuccess());
 
-        assertNotNull(channel.pipeline().get("persistIdleHandler"));
-
-        channel.pipeline().fireUserEventTriggered(IdleStateEvent.FIRST_READER_IDLE_STATE_EVENT);
-        Throwable t = extractException(channel);
-        assertTrue(t instanceof PersistTimeoutException);
+        TimeoutType phase = (TimeoutType) getPrivate(handler, "phase");
+        assertEquals("Expected handler to be in PERSIST phase", TimeoutType.PERSIST, phase);
         channel.close();
     }
 
-
-    private static Throwable extractException(EmbeddedChannel channel){
-        try{
+    private static Throwable extractException(EmbeddedChannel channel) {
+        try {
             channel.checkException();
             return null;
 
-        }catch(Throwable t){
+        } catch (Throwable t) {
             return t;
         }
     }
+
+    private static Object getPrivate(Object object, String field) throws ReflectiveOperationException {
+        Field f = object.getClass().getDeclaredField(field);
+        f.setAccessible(true);
+        return f.get(object);
+    }
+
 }

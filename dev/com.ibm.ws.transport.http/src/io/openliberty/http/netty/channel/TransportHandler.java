@@ -70,8 +70,6 @@ public final class TransportHandler extends ChannelDuplexHandler{
                 pipeline.remove(TransportHandler.this);
                 removeIfPresent(pipeline, HttpServerCodec.class);
                 removeIfPresent(pipeline, MaxOpenConnectionsHandler.class);
-                removeIfPresent(pipeline, ChunkedWriteHandler.class);
-                removeIfPresent(pipeline, ByteBufferCodec.class);
 
                 if(pipeline.get(NettyServletUpgradeHandler.class) == null){
                     pipeline.addLast(new NettyServletUpgradeHandler(context.channel()));

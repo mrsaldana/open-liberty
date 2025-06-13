@@ -9,54 +9,62 @@
  *******************************************************************************/
 package io.openliberty.http.netty.timeout;
 
-import java.util.concurrent.TimeUnit;
-
 import com.ibm.ws.http.netty.NettyHttpChannelConfig;
+
+import io.openliberty.http.netty.timeout.exception.PersistTimeoutException;
+import io.openliberty.http.netty.timeout.exception.ReadTimeoutException;
+
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.LastHttpContent;
-import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.concurrent.ScheduledFuture;
 
-// TODO -> Should this be @ChannelHandler.Sharable. Config is all equivalent across the endpoint
-// so might be fine...
-public class TimeoutHandler extends ChannelDuplexHandler{
-
-    // IdleStateHandlers for request reads or persist reads (NETTY)
-    private static final String NETTY_REQUEST_IDLE_HANDLER  = "requestIdleHandler";
-    private static final String NETTY_PERSIST_IDLE_HANDLER  = "persistIdleHandler";
-
-    // TimeoutEventHandlers for request read  or persist user event (OL)
-    private static final String OL_REQUEST_IDLE_EVENT = "requestIdleEventHandler";
-    private static final String OL_PERSIST_IDLE_EVENT = "persistIdleEventHandler";
+public class TimeoutHandler extends ChannelDuplexHandler {
 
     private static final TimeUnit LEGACY_UNIT = TimeUnit.MILLISECONDS;
-    private static final TimeUnit PREFERRED_UNIT = TimeUnit.SECONDS;
 
-    private final long configReadTimeout;
-    private final long configPersistTimeout;
+    private final long readTimeout;
+    private final long persistTimeout;
+
+    private volatile TimeoutType phase = TimeoutType.READ;
+    private volatile ChannelHandlerContext context;
+
+    private final AtomicReference<ScheduledFuture<?>> currentTimeout = new AtomicReference<>();
+
+    private final Runnable timerTask = () -> timeoutFired();
 
     public TimeoutHandler(NettyHttpChannelConfig config) {
-        this.configReadTimeout = config.getReadTimeout();   
-        this.configPersistTimeout = config.getPersistTimeout();
+        this.readTimeout = config.getReadTimeout();
+        this.persistTimeout = config.getPersistTimeout();
     }
 
     @Override
     public void channelActive(ChannelHandlerContext context) throws Exception {
-        activateRead(context);
+        this.context = context;
+        this.phase = TimeoutType.READ;
+        activateTimer();
         super.channelActive(context);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext context) throws Exception {
+        cancelTimer();
+        super.channelInactive(context);
     }
 
     @Override
     public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
         if (message instanceof FullHttpRequest) {
-            remove(context, NETTY_REQUEST_IDLE_HANDLER, OL_REQUEST_IDLE_EVENT);
-            remove(context, NETTY_PERSIST_IDLE_HANDLER, OL_PERSIST_IDLE_EVENT);
+            cancelTimer();
+            phase = TimeoutType.READ;
         }
         super.channelRead(context, message);
     }
@@ -66,81 +74,48 @@ public class TimeoutHandler extends ChannelDuplexHandler{
      * we assume we've finished handling the request. At that point,
      * let's switch to "persist" mode
      * 
-     * NOTE: Technically, persist should be for only the first read of the next request. 
+     * NOTE: Technically, persist should be for only the first read of the next request.
      * But the way we currently operate, and with autoread enabled, requests are
-     * aggregated and queued up prior to this point. So this only provides partial 
+     * aggregated and queued up prior to this point. So this only provides partial
      * coverage of the legacy implementation. A more loyal implementation can be provided
-     * by disabling auto-read which will be tackled at a later point. 
+     * by disabling auto-read which will be tackled at a later point.
      */
     @Override
     public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) throws Exception {
-        promise.addListener((ChannelFutureListener) future -> {
-            if(future.isSuccess()){
-                if(message instanceof FullHttpResponse || message instanceof LastHttpContent){
-                    activatePersist(context);
+        if (message instanceof FullHttpResponse || message instanceof LastHttpContent) {
+            promise.addListener((ChannelFutureListener) future -> {
+                if (future.isSuccess()) {
+                    cancelTimer();
+                    phase = TimeoutType.PERSIST;
+                    activateTimer();
                 }
-            }
-        });
+            });
+        }
         super.write(context, message, promise);
     }
 
-    private void activateRead(ChannelHandlerContext context){
-        swap(context, TimeoutType.READ, configReadTimeout, NETTY_REQUEST_IDLE_HANDLER, OL_REQUEST_IDLE_EVENT);
-    }
+    private void activateTimer() {
 
-    private void activatePersist(ChannelHandlerContext context){
-        swap(context, TimeoutType.PERSIST, configPersistTimeout, NETTY_PERSIST_IDLE_HANDLER, OL_PERSIST_IDLE_EVENT);
-    }
+        long timeout = (phase == TimeoutType.READ) ? readTimeout : persistTimeout;
 
-
-    private void swap(ChannelHandlerContext context, TimeoutType type, long timeout, String idleHandler, String eventHandler){
-        remove(context, NETTY_REQUEST_IDLE_HANDLER, OL_REQUEST_IDLE_EVENT);
-        remove(context, NETTY_PERSIST_IDLE_HANDLER, OL_PERSIST_IDLE_EVENT);
-
-        if(timeout <= 0) return;
-
-        //TODO *1* - does creating new idleStateHandlers cause performance degradation? Check with perf team. If it does, 
-        //we should try another strategy here like directly scheduling tasks. 
-        IdleStateHandler idle = (type == TimeoutType.WRITE) ? 
-                    new IdleStateHandler(0, timeout, 0, LEGACY_UNIT):
-                    new IdleStateHandler(timeout, 0, 0, LEGACY_UNIT);
-
-        context.pipeline().addBefore(context.name(), idleHandler, idle);
-        long preferredDuration = asPreferred(timeout, LEGACY_UNIT);
-
-        //TODO - same as TODO *1* -> perhaps we should consider persisting the same timeout event handler and clearing up the 
-        //state. 
-        context.pipeline().addAfter(idleHandler, eventHandler, new TimeoutEventHandler(type, preferredDuration, PREFERRED_UNIT));
-    }
-
-    /**
-     * Used to remove the TimeoutEventHandler (ours) and/or IdleStateHandler (Netty) if 
-     * they are configured in the pipeline. If the handlers are not in the pipeline, this
-     * method results in a No-Op.
-     * 
-     * @param context
-     * @param handlerName
-     * @param eventName
-     */
-    private static void remove(ChannelHandlerContext context, String handlerName, String eventName){
-        ChannelPipeline pipeline = context.pipeline();
-        if(pipeline.get(handlerName) != null){
-            pipeline.remove(handlerName);
+        if (context == null || timeout <= 0) {
+            return;
         }
-        if(pipeline.get(eventName) != null){
-            pipeline.remove(eventName);
-        }
+
+        cancelTimer();
+        ScheduledFuture<?> future = context.executor().schedule(timerTask, timeout, LEGACY_UNIT);
+        currentTimeout.set(future);
     }
 
-    /**
-     * Convert a timeout duration from any TimeUnit to our preferred
-     * logging convention.
-     * @param timeout
-     * @param unit
-     * @return
-     */
-    private static long asPreferred(long timeout, TimeUnit unit){
+    private void timeoutFired() {
+        IOException exception = (phase == TimeoutType.READ) ? new ReadTimeoutException(readTimeout, LEGACY_UNIT) : new PersistTimeoutException(persistTimeout, LEGACY_UNIT);
+        context.fireExceptionCaught(exception);
+    }
 
-        return PREFERRED_UNIT.convert(timeout, unit);
+    private void cancelTimer() {
+        ScheduledFuture<?> current = currentTimeout.getAndSet(null);
+        if (current != null) {
+            current.cancel(false); //Do not interrupt thread
+        }
     }
 }
