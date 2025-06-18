@@ -156,12 +156,6 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
         return HeaderValidator.process(value, FieldType.VALUE, config);
     }
 
-    private void assertTotalHeaderCount(){
-        if(limitOnNumberOfHeaders > 0 && headers.size() >= limitOnNumberOfHeaders){
-            throw new IllegalStateException("Maximum header count (" + limitOnNumberOfHeaders + ") exceeded");
-        }
-    }
-
     private AsciiString toAsciiString(byte[] bytes){
         return new AsciiString(bytes, false);
     }
@@ -281,7 +275,6 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
     }
 
     private void appendHeader(AsciiString name, CharSequence value){
-        assertTotalHeaderCount();
         headers.add(name, value);
     }
 
@@ -421,7 +414,6 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
         Objects.requireNonNull(value);
         AsciiString n = processHeaderName(name.getName());
         if (!headers.contains(n)) {
-            assertTotalHeaderCount();
             headers.set(n, processHeaderValue(value));
         }
         return null;
@@ -447,9 +439,6 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
     }
 
     private void setHeader(AsciiString name, CharSequence value){
-        if (!headers.contains(name)) {
-            assertTotalHeaderCount();
-        }
         headers.set(name, value);
     }
 

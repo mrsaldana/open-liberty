@@ -449,7 +449,7 @@ public class NettyRequestMessage extends NettyBaseMessage implements HttpRequest
             InetSocketAddress local = (InetSocketAddress) nettyContext.channel().localAddress();
             String host = local.getHostString();
             int port = context.getLocalPort();
-            url = getScheme() + "://" + host + ':' + port + request.uri();
+            url = getScheme() + "://" + host + ':' + port + "/" + getRequestURI();
         }
 
         return new StringBuffer(url);
