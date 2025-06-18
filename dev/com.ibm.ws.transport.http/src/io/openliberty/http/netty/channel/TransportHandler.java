@@ -10,7 +10,6 @@
 package io.openliberty.http.netty.channel;
 
 import com.ibm.ws.http.netty.NettyHttpConstants;
-import com.ibm.ws.http.netty.pipeline.ByteBufferCodec;
 import com.ibm.ws.netty.upgrade.NettyServletUpgradeHandler;
 
 import io.netty.channel.ChannelDuplexHandler;
