@@ -531,7 +531,7 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
         
         if(name == null) { return null;}
 
-        if(!isValidCookieHeader(header) && !containsHeader(header)){
+        if(!isValidCookieHeader(header) || !containsHeader(header)){
             return null;
         }
 
@@ -593,7 +593,7 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
             }
             return false;
         }
-        getCookieCache(cookieType).addNewCookie(cookie.clone());
+        getCookieCache(cookieType, false).addNewCookie(cookie.clone());
         return true;
     }
 
@@ -619,7 +619,7 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
             return false;
         }
 
-        return getCookieCache(cookieHeader).removeCookie(cookie);
+        return getCookieCache(cookieHeader, false).removeCookie(cookie);
     }
 
     @Override
@@ -634,15 +634,21 @@ public class NettyBaseMessage implements HttpBaseMessage, Externalizable {
     }
 
     
-    protected CookieCacheData getCookieCache(HttpHeaderKeys header) {
+    protected CookieCacheData getCookieCache(HttpHeaderKeys header, boolean assertParsed) {
 
         if(!isValidCookieHeader(header)){
             throw new IllegalArgumentException("Not a recognized cookie header: " + header.getName());
         }
 
         CookieCacheData cache = cookieCacheMap.computeIfAbsent(header, h -> new CookieCacheData(h));
-        parseNewCookieLinesIfNeeded(cache);
+        if(assertParsed && cache.isDirty()){
+            parseNewCookieLinesIfNeeded(cache);
+        }
         return cache;
+    }
+
+    private CookieCacheData getCookieCache(HttpHeaderKeys header){
+        return getCookieCache(header, true);
     }
 
 
