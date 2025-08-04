@@ -114,16 +114,8 @@ public class LibertyUpgradeCodec implements UpgradeCodecFactory {
                         // TODO Should this actually be a difference from the settings value instead of the spec size itself since that's the part where the ohter endpoint has the established info
                         int updateSize = httpConfig.getH2ConnectionWindowSize() - Constants.SPEC_INITIAL_WINDOW_SIZE;
                         try {
-                            // System.out.println("Original initial window size for connection: "
-                            //                    + ((DefaultHttp2LocalFlowController) handler.decoder().flowController()).initialWindowSize(handler.decoder().connection().connectionStream()));
-                            // System.out.println("Original window size for connection: "
-                            //                    + ((DefaultHttp2LocalFlowController) handler.decoder().flowController()).windowSize(handler.decoder().connection().connectionStream()));
                              ((DefaultHttp2LocalFlowController) handler.decoder().flowController()).incrementWindowSize(handler.decoder().connection().connectionStream(),
                                                                                                                        updateSize);
-                            // System.out.println("New window size for connection: "
-                            //                    + ((DefaultHttp2LocalFlowController) handler.decoder().flowController()).windowSize(handler.decoder().connection().connectionStream()));
-                            // System.out.println("New initial window size for connection: "
-                            //                    + ((DefaultHttp2LocalFlowController) handler.decoder().flowController()).initialWindowSize(handler.decoder().connection().connectionStream()));
                         } catch (Http2Exception e) {
                             ctx.fireExceptionCaught(e);
                         }

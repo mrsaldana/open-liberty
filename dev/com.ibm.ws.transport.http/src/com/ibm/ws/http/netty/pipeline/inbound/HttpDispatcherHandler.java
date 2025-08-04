@@ -58,8 +58,6 @@ public class HttpDispatcherHandler extends SimpleChannelInboundHandler<FullHttpR
     private final DefaultFullHttpResponse errorResponse;
     private static final String MAX_STREAMS_REFUSED_MESSAGE = "too many client-initiated streams have been refused; closing the connection";
 
-    // private HttpDispatcherLink link;
-
     public HttpDispatcherHandler(HttpChannelConfig config) {
         super(false);
         Objects.requireNonNull(config);

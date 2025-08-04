@@ -85,14 +85,18 @@ public class HeaderHandler {
 
         if (config.removeServerHeader()) {
             if (headers.contains(HttpHeaderKeys.HDR_SERVER.getName())) {
-                Tr.debug(tc, "Configuration forcing removal of Server header");
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(tc, "Configuration forcing removal of Server header");
+                }
                 headers.remove(HttpHeaderKeys.HDR_SERVER.getName());
             }
         } else if (!headers.contains(HttpHeaderKeys.HDR_SERVER.getName())) {
             byte[] serverHeader = config.getServerHeaderValue();
             if (Objects.nonNull(serverHeader)) {
                 headers.set(HttpHeaderKeys.HDR_SERVER.getName(), new String(serverHeader, StandardCharsets.UTF_8));
-                Tr.debug(tc, "Adding the Server header value: " + headers.get(HttpHeaderKeys.HDR_SERVER.getName()));
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(tc, "Adding the Server header value: " + headers.get(HttpHeaderKeys.HDR_SERVER.getName()));
+                }
             }
 
         }
