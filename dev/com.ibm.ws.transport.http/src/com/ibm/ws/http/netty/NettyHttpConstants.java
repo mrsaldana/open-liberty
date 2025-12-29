@@ -10,6 +10,7 @@
 package com.ibm.ws.http.netty;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.ibm.ws.http.channel.internal.HttpChannelConfig;
 import com.ibm.ws.http.channel.internal.inbound.HttpInputStreamImpl;
@@ -46,8 +47,8 @@ public class NettyHttpConstants {
     public static final AttributeKey<Boolean> UPGRADED = AttributeKey.valueOf("httpUpgraded");
     public static final AttributeKey<HttpOutputStreamObserver> UPGRADE_OBSERVER = AttributeKey.valueOf("upgradeObserver");
     public static final AttributeKey<HttpChannelConfig> HTTP_CONFIG = AttributeKey.valueOf("httpConfig");
-    public static final AttributeKey<CompletableFuture<Void>> UPGRADE_READY_PROMISE =
-        AttributeKey.valueOf("upgrade.ready.promise");
+    public static final AttributeKey<CompletableFuture<Void>> UPGRADE_READY_PROMISE = AttributeKey.valueOf("upgradeReadyPromise");
+    public static final AttributeKey<AtomicBoolean> READ_PENDING = AttributeKey.valueOf("readPending");
     public static final String VC_HTTP_INPUT_STREAM = "netty.http.inputStream";
     public static final String VC_HTTP2_STREAM_ID = "netty.http2.streamId";
 

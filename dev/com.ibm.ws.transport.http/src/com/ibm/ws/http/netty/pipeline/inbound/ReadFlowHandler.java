@@ -1,5 +1,10 @@
 package com.ibm.ws.http.netty.pipeline.inbound;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import com.ibm.ws.http.netty.NettyHttpConstants;
+import com.ibm.ws.http.netty.message.BodyQueue;
+
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFutureListener;
@@ -8,7 +13,7 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.socket.ChannelInputShutdownEvent;
 import io.netty.channel.socket.ChannelInputShutdownReadComplete;
 import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpUtil;
@@ -40,9 +45,12 @@ public final class ReadFlowHandler extends ChannelDuplexHandler{
 
     @Override
     public void channelActive(ChannelHandlerContext context) throws Exception {
-        if (context.channel().config().isAutoRead()) {
+
+        if (!Boolean.TRUE.equals(context.channel().attr(NettyHttpConstants.UPGRADED).get())
+            && context.channel().config().isAutoRead()) {
             context.channel().config().setAutoRead(false);
         }
+
         FlowState state = state(context);
         state.requestConsumed     = false;
         state.responseInFlight    = false;
@@ -50,43 +58,31 @@ public final class ReadFlowHandler extends ChannelDuplexHandler{
         state.closedOrUpgraded    = false;
         state.headRequest = false;
         super.channelActive(context);
+
+        ReadFlowHandler.clearReadPending(context);
         context.read();
     }
 
     @Override
     public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
+
+        
         FlowState state = state(context);
         if(message instanceof HttpRequest){
             HttpRequest request = (HttpRequest) message;
             state.headRequest = request.method() == HttpMethod.HEAD;
             state.requestConsumed = state.headRequest || !isBodyExpected(request);
             super.channelRead(context, message);
-            if (!state.requestConsumed && !state.closedOrUpgraded && context.channel().isActive()) {
-                context.read(); 
-            }
             return;
         }
 
         if(message instanceof LastHttpContent){
             state.requestConsumed = true;
             super.channelRead(context, message);
-            verifyNeedRead(context, state);
             return;
         }
 
         super.channelRead(context, message);
-        if (!state.requestConsumed && !state.closedOrUpgraded && context.channel().isActive()) {
-            context.read();
-        }
-    }
-
-    @Override
-    public void channelReadComplete(ChannelHandlerContext context) throws Exception {
-        FlowState state = state(context);
-        if (!state.closedOrUpgraded && !state.responseInFlight && !state.requestConsumed && context.channel().isActive()) {
-            context.read();                        
-        }
-        super.channelReadComplete(context);
     }
 
     @Override
@@ -100,14 +96,10 @@ public final class ReadFlowHandler extends ChannelDuplexHandler{
             state.keepAliveAllowed = HttpUtil.isKeepAlive(response);
 
             if (!informational) {
-                state.responseInFlight = true;
-
-                if(isResponseBodyPermitted(code)){
-                    promise.addListener((ChannelFutureListener) f -> {
-                        state.responseInFlight = false;
-                        verifyNeedRead(context, state);
-                    });
-                }
+                state.responseInFlight = true; 
+                if (message instanceof FullHttpResponse) {
+                    promise.addListener((ChannelFutureListener) f -> state.responseInFlight = false);
+                }         
             }
         }
         
@@ -115,7 +107,6 @@ public final class ReadFlowHandler extends ChannelDuplexHandler{
             // When the final chunk is flushed, we may allow one more read
             promise.addListener((ChannelFutureListener) f -> {
                 state.responseInFlight = false;
-                verifyNeedRead(context, state);
             });
         }
 
@@ -129,23 +120,10 @@ public final class ReadFlowHandler extends ChannelDuplexHandler{
             state.closedOrUpgraded = true;
             state.keepAliveAllowed = false;
             if (!state.responseInFlight) {
-                //context.close(); // nothing in flight; close now
                 return;
             }
         }
         super.userEventTriggered(context, evt);
-    }
-
-    private static void verifyNeedRead(ChannelHandlerContext context, FlowState state) {
-        
-            System.out.printf("verifyNeedRead: consumed=%s inflight=%s keepAlive=%s closed=%s active=%s",
-                     state.requestConsumed, state.responseInFlight, state.keepAliveAllowed, state.closedOrUpgraded, context.channel().isActive());
-        
-        if(state.closedOrUpgraded || !context.channel().isActive()) return;
-
-        if(state.requestConsumed && !state.responseInFlight && state.keepAliveAllowed) {
-            context.read(); 
-        }
     }
 
     public static FlowState getFlowState(Channel channel) {
@@ -169,8 +147,30 @@ public final class ReadFlowHandler extends ChannelDuplexHandler{
         return HttpUtil.getContentLength(request, -1) > 0;
     }
 
-    private static boolean isResponseBodyPermitted(int status) {
-        if (status == 101 || status == 204 || status == 304) return false;
-        return !(status >= 100 && status < 200);
+    public static void requestReadIfNeeded(ChannelHandlerContext context, BodyQueue queue) {
+        if (context == null || queue == null) return;
+        if (context.channel().config().isAutoRead()) return;
+        if (!queue.wantsInput()) return;
+
+        AtomicBoolean pending = context.channel().attr(NettyHttpConstants.READ_PENDING).get();
+        if (pending == null) {
+            pending = new AtomicBoolean(false);
+            context.channel().attr(NettyHttpConstants.READ_PENDING).set(pending);
+        }
+        if (!pending.compareAndSet(false, true)) {
+            return; // already requested a read; don’t spam
+        }
+
+        if (context.executor().inEventLoop()) {
+            context.channel().read();
+        } else {
+            context.executor().execute(() -> context.channel().read());
+        }
+    }
+
+    public static void clearReadPending(ChannelHandlerContext context) {
+        if (context == null) return;
+        AtomicBoolean pending = context.channel().attr(NettyHttpConstants.READ_PENDING).get();
+        if (pending != null) pending.set(false);
     }
 }

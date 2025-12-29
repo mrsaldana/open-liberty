@@ -70,11 +70,11 @@ import io.netty.handler.codec.http2.Http2Exception.StreamException;
 import io.netty.handler.codec.http2.Http2Stream;
 import io.netty.handler.codec.http2.HttpConversionUtil;
 import io.netty.handler.codec.http2.HttpToHttp2ConnectionHandler;
-import io.netty.handler.timeout.ReadTimeoutException;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import io.netty.util.ReferenceCountUtil;
 import io.openliberty.http.netty.timeout.TimeoutHandler;
 import io.openliberty.http.netty.timeout.exception.TimeoutException;
+import io.openliberty.http.netty.timeout.exception.ReadTimeoutException;
 
 import com.ibm.ws.http.channel.outstream.HttpOutputStreamObserver;
 
@@ -149,6 +149,7 @@ public class HttpDispatcherHandler extends SimpleChannelInboundHandler<HttpObjec
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        ReadFlowHandler.clearReadPending(ctx);
         if (upgradingNow && msg instanceof ByteBuf) {
             final ByteBuf buf = (ByteBuf) msg;
 
@@ -211,9 +212,6 @@ public class HttpDispatcherHandler extends SimpleChannelInboundHandler<HttpObjec
                 }
             }
 
-            if (!ctx.channel().config().isAutoRead() && queue.wantsInput()) {
-                ctx.executor().execute(() -> ctx.channel().read());
-            }
             return;
         }
 
@@ -253,9 +251,7 @@ public class HttpDispatcherHandler extends SimpleChannelInboundHandler<HttpObjec
                     if (this.link != null)
                         this.link.setBodyComplete();
                 }
-                if (!ctx.channel().config().isAutoRead() && queue.wantsInput()) {
-                    ctx.executor().execute(() -> ctx.channel().read());
-                }
+                ReadFlowHandler.requestReadIfNeeded(ctx, queue);
             } finally {
                 ReferenceCountUtil.release(content);
             }
@@ -265,8 +261,8 @@ public class HttpDispatcherHandler extends SimpleChannelInboundHandler<HttpObjec
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-        if (!ctx.channel().config().isAutoRead() && !upgradingNow && queue != null && queue.wantsInput()) {
-            ctx.executor().execute(() -> ctx.channel().read());
+        if(!upgradingNow  && queue != null){
+            ReadFlowHandler.requestReadIfNeeded(ctx, queue);
         }
         super.channelReadComplete(ctx);
     }
@@ -386,8 +382,7 @@ public class HttpDispatcherHandler extends SimpleChannelInboundHandler<HttpObjec
 
         streamingInitialized = true;
 
-        if (!ctx.channel().config().isAutoRead() && queue.wantsInput())
-            ctx.channel().read();
+        ReadFlowHandler.requestReadIfNeeded(ctx, queue);
         HttpDispatcher.getExecutorService().execute(() -> link.ready());
     }
 

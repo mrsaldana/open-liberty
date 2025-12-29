@@ -42,7 +42,10 @@ import com.ibm.wsspi.tcpchannel.TCPReadCompletedCallback;
 import com.ibm.wsspi.tcpchannel.TCPReadRequestContext;
 
 import io.netty.channel.Channel;
+
+import io.openliberty.http.netty.timeout.TimeoutHandler;
 import io.openliberty.http.options.TcpOption;
+
 import com.ibm.ws.http.netty.NettyHttpConstants;
 import com.ibm.ws.http.netty.pipeline.inbound.HttpDispatcherHandler;
 import com.ibm.wsspi.channelfw.ChannelFrameworkFactory;
@@ -103,8 +106,6 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
     private HttpInputStreamImpl input() throws IOException {
     
         HttpInputStreamImpl in = null;
-        System.out.println("DEBUG: input() vc is: " + vc);
-
         if (vc != null) {
             Object candidate = vc.getStateMap().get(NettyHttpConstants.VC_HTTP_INPUT_STREAM);
             if (candidate instanceof HttpInputStreamImpl) {
@@ -141,6 +142,15 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
 
     @Override
     public long read(long numBytes, int timeout) throws IOException {
+         if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                            + " read(sync): numBytes=" + numBytes
+                            + " timeout=" + timeout
+                            + " aborted=" + aborted
+                            + " channelActive=" + nettyChannel.isActive()
+                            + " logicalUpg=" + isLogicallyUpgraded()
+                            + " hasUpgradeHandler=" + hasUpgradeHandler());
+         }
 
         if(aborted) throw new IOException("I/O Aborted");
 
@@ -154,6 +164,8 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
                                    + " remote="
                                    + nettyChannel.remoteAddress());
         }
+
+        assertNotInEventLoop("TCPReadRequestContext.read(sync)");
 
         final boolean logicalUpg = isLogicallyUpgraded();
         final boolean handlerReady = hasUpgradeHandler();
@@ -178,6 +190,12 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
         }
 
         ensureBuffersOrJIT(numBytes, false);
+
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                            + " read(sync): dispatching to "
+                            + (hasUpgradeHandler() ? "upgradedSyncRead" : "nonUpgradedSyncRead"));
+        }
 
         if(numBytes == 0){
             return hasUpgradeHandler() ? upgradedImmediateDrain() : nonUpgradedImmediateDrain();
@@ -280,6 +298,12 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
     }
 
     private long upgradedSyncRead(long numBytes, int timeout) throws IOException {
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " upgradedSyncRead: numBytes=" + numBytes
+                               + " timeout=" + timeout
+                               + " queuedBytes=" + ensureUpgradeHandler().queuedDataSize());
+        }
         final NettyServletUpgradeHandler h = ensureUpgradeHandler();
         h.setTCPReadContext(this);
         h.setVC(vc);
@@ -291,41 +315,63 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
 
         final int t = normalizeTimeout(timeout);
         final long need = Math.max(1L, numBytes);
-        final long deadlineNs = (t == NO_TIMEOUT) ? Long.MAX_VALUE : System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(t);
-
+        
         final boolean wasAuto = pushAutoRead(); 
+        TimeoutHandler.ReadOpToken token = null;
+
         try {
+
+            if(t != NO_TIMEOUT){
+                token = TimeoutHandler.armReadOp(nettyChannel, t, () ->{
+                    try{
+                        h.immediateTimeout();
+
+                    }catch(Throwable ignore) {}
+                });
+            }
+
             ensureReadIfManual();
 
-    
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " upgradedSyncRead: entering wait loop, need=" + need
+                                   + " currentQueued=" + h.queuedDataSize());
+            }
             if (h.containsQueuedData() && h.queuedDataSize() >= need) {
                 long copied = h.setToBuffer();
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(this, tc, logId()
+                                       + " upgradedSyncRead: returning copied=" + copied
+                                       + " queuedAfter=" + h.queuedDataSize());
+                }
                 return copied;
             }
 
             while (nettyChannel.isActive()) {
-                final long now = System.nanoTime();
-                if (deadlineNs != Long.MAX_VALUE && now >= deadlineNs) {
+                if (t != NO_TIMEOUT && TimeoutHandler.readOpTimedOut(nettyChannel)) {
                     throw new SocketTimeoutException("Failed to read data within the specified timeout.");
                 }
-                final long remainingMs = (deadlineNs == Long.MAX_VALUE) ? 250L : Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadlineNs - now));
+
                 try {
-                    h.waitForDataRead(Math.min(remainingMs, 250L)); 
+                    h.waitForDataRead(250L);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new IOException("Interrupted while waiting for upgraded read data.", ie);
                 }
 
-                if (h.containsQueuedData() && h.queuedDataSize() >= need) {
-                    long copied = h.setToBuffer();
-                    Tr.debug(tc, "(Fast path) UPG sync read: need=" + need + " copied=" + copied + " queuedAfter=" + h.queuedDataSize());
-                    return copied;
+                if (h.containsQueuedData() && ((long) h.queuedDataSize()) >= need) {
+                    return h.setToBuffer();
                 }
 
                 ensureReadIfManual();
             }
             throw new EOFException("Channel inactive during read");
         } finally {
+            if (token != null) {
+                try { 
+                    token.close(); 
+                } catch (Throwable ignore) {}
+            }
             popAutoRead(wasAuto); 
         }
     }
@@ -333,6 +379,15 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
     @Override
     //@FFDCIgnore(EOFException.class)
     public VirtualConnection read(long numBytes, TCPReadCompletedCallback callback, boolean forceQueue, int timeout) {
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " read(async): numBytes=" + numBytes
+                               + " timeout=" + timeout
+                               + " forceQueue=" + forceQueue
+                               + " callback=" + callback
+                               + " logicalUpg=" + isLogicallyUpgraded()
+                               + " hasUpgradeHandler=" + hasUpgradeHandler());
+        }
         if (aborted) {
             if (callback != null) {
                 HttpDispatcher.getExecutorService().execute(
@@ -348,6 +403,8 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
             }
             return null;
         }
+
+        assertNotInEventLoop("TCPReadRequestContext.read(async)");
 
         boolean logicalUpg = isLogicallyUpgraded();
         boolean handlerReady = hasUpgradeHandler();
@@ -414,6 +471,13 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
     }
 
     public VirtualConnection upgradedAsyncRead(long numBytes, TCPReadCompletedCallback callback, boolean forceQueue, int timeout) {
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " upgradedAsyncRead: numBytes=" + numBytes
+                               + " timeout=" + timeout
+                               + " forceQueue=" + forceQueue
+                               + " callback=" + callback);
+        }
         final NettyServletUpgradeHandler h = ensureUpgradeHandler();
         h.setTCPReadContext(this);
         h.setVC(vc);
@@ -440,6 +504,12 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
             @Override
             public void complete(VirtualConnection v, TCPReadRequestContext ctx) {
 
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(NettyTCPReadRequestContext.this, tc, logId()
+                                                                  + " upgradedAsyncRead.wrapped.complete: v=" + v
+                                                                  + " ctx=" + ctx);
+                }
+
 
                 io.netty.util.concurrent.ScheduledFuture<?> f = toRef.getAndSet(null);
                 if (f != null)
@@ -463,6 +533,11 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
 
             @Override
             public void error(VirtualConnection v, TCPReadRequestContext ctx, java.io.IOException e) {
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(NettyTCPReadRequestContext.this, tc, logId()
+                                                                  + " upgradedAsyncRead.wrapped.complete: v=" + v
+                                                                  + " ctx=" + ctx);
+                }
                 io.netty.util.concurrent.ScheduledFuture<?> f = toRef.getAndSet(null);
                 if (f != null)
                     try {
@@ -490,6 +565,12 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
 
         if (h.containsQueuedData() && h.queuedDataSize() >= need) {
             long copied = h.setToBuffer();
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " upgradedAsyncRead: fast-path copied=" + copied
+                                   + " queuedAfter=" + h.queuedDataSize()
+                                   + " forceQueue=" + forceQueue);
+            }
             if (!forceQueue) {
                 popAutoRead(wasAuto);
                 return vc; 
@@ -510,6 +591,11 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
         }
 
         h.queueAsyncRead(need);
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " upgradedAsyncRead: queued async read, need=" + need
+                               + " queuedBytes=" + h.queuedDataSize());
+        }
         ensureReadIfManual();
 
         final int t = normalizeTimeout(timeout);
@@ -641,24 +727,41 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
 
     private NettyServletUpgradeHandler ensureUpgradeHandler() {
         NettyServletUpgradeHandler h = nettyChannel.pipeline().get(NettyServletUpgradeHandler.class);
-        if(h != null) return h;
+        
+        if(h==null){
+            //TODO lazy initialization due to wsoc not triggering upgrade event. Find missing location to throw event .
+            if(isWsocUpgrade()){
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(this, tc, logId()
+                                       + " ensureUpgradeHandler: installing new handler lazily for WSOC upgrade");
+                }
+                Tr.debug(tc, "Installing upgrade handler for WSOC upgrade");
+                h = new NettyServletUpgradeHandler(nettyChannel);
+                h.setTCPReadContext(this);
+                h.setVC(vc);
+                if(nettyChannel.pipeline().get("ServletUpgradeHandler") == null){
+                    nettyChannel.pipeline().addLast("ServletUpgradeHandler", h);
+                }
 
-        //TODO lazy initialization due to wsoc not triggering upgrade event. Find missing location to throw event .
-        if(isWsocUpgrade()){
-            Tr.debug(tc, "Installing upgrade handler for WSOC upgrade");
-            h = new NettyServletUpgradeHandler(nettyChannel);
-            h.setTCPReadContext(this);
-            h.setTCPReadContext(this);
-            h.setVC(vc);
-            if(nettyChannel.pipeline().get("ServletUpgradeHandler") == null){
-                nettyChannel.pipeline().addLast("ServletUpgradeHandler", h);
+
+                return h;
+            } else {
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                + " ensureUpgradeHandler: found existing handler " + h);
             }
-            return h;
         }
-        //if (h == null) {
             throw new IllegalStateException("Channel marked upgraded but no NettyServletUpgradeHandler in pipeline");
-       // }
-        //return h;
+        } else {
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " ensureUpgradeHandler: found existing handler " + h);
+            }
+        }
+        h.setTCPReadContext(this);
+        h.setVC(vc);
+
+        return h;
     }
 
     private boolean isWsocUpgrade(){
@@ -818,7 +921,19 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
         }
     }
 
+    //TODO -> Netty util candidate
+    private void assertNotInEventLoop(String method) {
+    if (nettyChannel.eventLoop().inEventLoop()) {
+        throw new IllegalStateException(method + " must not run on Netty event loop");
+    }
+}
 
+    //Debug onlly, remove after dev of auto read
+    private String logId() {
+        return "[ReadCtx ch=" + nettyChannel.id()
+               + " ctx=" + System.identityHashCode(this)
+               + " vc=" + vc + "]";
+    }
     
 
 }
