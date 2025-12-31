@@ -377,8 +377,7 @@ public class TimeoutHandler extends ChannelDuplexHandler {
     }
 
     public static ReadOpToken armReadOp(Channel channel, int timeout, Runnable callback){
-        TimeoutHandler handler = channel.pipeline().get(TimeoutHandler.class);
-        if (handler == null || timeout <=0)
+        if (timeout <=0)
             return new ReadOpToken(channel);
 
         AtomicBoolean flag = channel.attr(READ_OP_TIMED).get();
@@ -395,17 +394,20 @@ public class TimeoutHandler extends ChannelDuplexHandler {
         if (previous != null)
             previous.cancel(false);
 
-        ScheduledFuture<?> future = handler.parentContext.executor().schedule( () -> {
-            channel.attr(READ_OP_TIMED).get().set(true);
+        ScheduledFuture<?> future = channel.eventLoop().schedule(() -> {
+            AtomicBoolean value = channel.attr(READ_OP_TIMED).get();
+            if (value != null) {
+                value.set(true);
+            }
             Runnable cb = channel.attr(READ_OP_CALLBACK).get();
-            if(cb!=null){
+            if(cb != null){
                 HttpDispatcher.getExecutorService().execute( () -> {
                     try{
                         cb.run();
-                    }catch(Throwable ignore){}
+                    } catch(Throwable ignore) {}
                 });
             }
-            handler.parentContext.fireExceptionCaught(new ReadTimeoutException(timeout, LEGACY_UNIT));
+            channel.pipeline().fireExceptionCaught(new ReadTimeoutException(timeout, LEGACY_UNIT));
         }, timeout, TimeUnit.MILLISECONDS);
 
         channel.attr(READ_OP_FUTURE).set(future);
@@ -413,6 +415,8 @@ public class TimeoutHandler extends ChannelDuplexHandler {
     }
 
     public static void cancelReadOp(Channel channel){
+        channel.attr(READ_OP_CALLBACK).set(null);
+
         ScheduledFuture<?> future = channel.attr(READ_OP_FUTURE).getAndSet(null);
         if(future != null){
             future.cancel(false);
@@ -421,7 +425,7 @@ public class TimeoutHandler extends ChannelDuplexHandler {
         if (flag != null){
             flag.set(false);
         } 
-        channel.attr(READ_OP_CALLBACK).set(null);
+        
     }
 
     public static boolean readOpTimedOut(Channel channel){
@@ -449,9 +453,7 @@ public class TimeoutHandler extends ChannelDuplexHandler {
                 }catch (Throwable ignore){}
             });
         }
-        ChannelHandlerContext context = channel.pipeline().firstContext();
-        if (context != null)
-            context.fireExceptionCaught(new ReadTimeoutException(0, LEGACY_UNIT));
+        channel.pipeline().fireExceptionCaught(new ReadTimeoutException(0, LEGACY_UNIT));
     }
 
     public static final class ReadOpToken implements AutoCloseable {
