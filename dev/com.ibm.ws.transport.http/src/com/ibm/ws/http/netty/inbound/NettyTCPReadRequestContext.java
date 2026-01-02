@@ -15,6 +15,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -51,6 +52,7 @@ import com.ibm.ws.http.netty.pipeline.inbound.HttpDispatcherHandler;
 import com.ibm.wsspi.channelfw.ChannelFrameworkFactory;
 
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.ScheduledFuture;
 
 /**
  *
@@ -241,10 +243,13 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
         }
 
         final int effectiveTimeout = normalizeTimeout(timeout);
-        final long deadlineNs = (effectiveTimeout == NO_TIMEOUT) ? Long.MAX_VALUE : System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(effectiveTimeout);
-
-        final boolean wasAuto = pushAutoRead(); 
+        final boolean wasAuto = pushAutoRead();
+        TimeoutHandler.ReadOpToken token = null;
         try {
+            if (effectiveTimeout > 0) {
+                token = TimeoutHandler.armReadOp(nettyChannel, effectiveTimeout, null);
+            }
+
             ensureReadIfManual(); 
 
             final byte[] scratch = new byte[8192];
@@ -286,13 +291,16 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
                     nettyChannel.eventLoop().execute(nettyChannel::read);
                 }
 
-                if (deadlineNs != Long.MAX_VALUE && System.nanoTime() > deadlineNs) {
+                if (effectiveTimeout > 0 && TimeoutHandler.readOpTimedOut(nettyChannel)) {
                     throw new SocketTimeoutException("sync timeout; delivered=" + delivered
                                                      + " need=" + numBytes + " bufRemain=" + remaining(buffers));
                 }
                 LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
             }
         } finally {
+            if (token != null) {
+               try { token.close(); } catch (Throwable ignore) {}
+            }
             popAutoRead(wasAuto); 
         }
     }
@@ -353,10 +361,14 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
                 }
 
                 try {
-                    h.waitForDataRead(250L);
+                    h.waitForDataRead(0L);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new IOException("Interrupted while waiting for upgraded read data.", ie);
+                }
+
+                if (h.peerClosedConnection() && !h.containsQueuedData()) {
+                    throw new IOException("Peer closed connection during read");
                 }
 
                 if (h.containsQueuedData() && ((long) h.queuedDataSize()) >= need) {
@@ -496,8 +508,7 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
         final boolean wasAuto = pushAutoRead(); 
         ensureReadIfManual();
 
-        final io.netty.util.concurrent.EventExecutor el = nettyChannel.eventLoop();
-        final java.util.concurrent.atomic.AtomicReference<io.netty.util.concurrent.ScheduledFuture<?>> toRef = new java.util.concurrent.atomic.AtomicReference<>(null);
+        final AtomicReference<TimeoutHandler.ReadOpToken> readTokenRef = new AtomicReference<>(null);
 
         final TCPReadCompletedCallback wrapped = new TCPReadCompletedCallback() {
             
@@ -511,12 +522,12 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
                 }
 
 
-                io.netty.util.concurrent.ScheduledFuture<?> f = toRef.getAndSet(null);
-                if (f != null)
-                    try {
-                        f.cancel(false);
-                    } catch (Throwable ignore) {
-                    }
+                TimeoutHandler.ReadOpToken readToken = readTokenRef.getAndSet(null);
+                if (readToken != null) {
+                    try { 
+                        tok.close(); 
+                    } catch (Throwable ignore) {}
+                }
                 try {
                     if (callback != null) {
                         HttpDispatcher.getExecutorService().execute(() -> {
@@ -538,12 +549,12 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
                                                                   + " upgradedAsyncRead.wrapped.complete: v=" + v
                                                                   + " ctx=" + ctx);
                 }
-                io.netty.util.concurrent.ScheduledFuture<?> f = toRef.getAndSet(null);
-                if (f != null)
-                    try {
-                        f.cancel(false);
-                    } catch (Throwable ignore) {
-                    }
+                TimeoutHandler.ReadOpToken tok = readTokenRef.getAndSet(null);
+                if (tok != null) {
+                    try { 
+                        tok.close(); 
+                    } catch (Throwable ignore) {}
+                }
                 try {
                     if (callback != null) {
                         HttpDispatcher.getExecutorService().execute(() -> {
@@ -590,6 +601,16 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
             }
         }
 
+        // Arm timeout before queueAsyncRead to avoid "complete first, arm later" races.
+        final int t = normalizeTimeout(timeout);
+        if (t != NO_TIMEOUT) {
+            readTokenRef.set(TimeoutHandler.armReadOp(nettyChannel, t, () -> {
+                try {
+                    h.immediateTimeout();
+                } catch (Throwable ignore) {}
+            }));
+        }
+
         h.queueAsyncRead(need);
         if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
             Tr.debug(this, tc, logId()
@@ -597,18 +618,6 @@ public class NettyTCPReadRequestContext implements TCPReadRequestContext {
                                + " queuedBytes=" + h.queuedDataSize());
         }
         ensureReadIfManual();
-
-        final int t = normalizeTimeout(timeout);
-        if (t != NO_TIMEOUT) {
-            toRef.set(el.schedule(() -> {
-                if (h.isAsyncReadArmed() && nettyChannel.isActive()) {
-                    try {
-                        wrapped.error(vc, this, new SocketTimeoutException("Read operation timed out"));
-                    } catch (Throwable ignore) {
-                    }
-                }
-            }, t, TimeUnit.MILLISECONDS));
-        }
         return null;
     }
 

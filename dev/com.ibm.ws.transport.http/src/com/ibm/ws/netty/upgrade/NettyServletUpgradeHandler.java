@@ -97,6 +97,7 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
                 Tr.debug(this, tc, "NettyServletUpgradeHandler ChannelInputShutdownEvent kicked off for channel " + channel);
             }
             peerClosed.set(true);
+            signalReadReady();
             if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                 Tr.debug(this, tc, logId()
                                    + " userEventTriggered: ChannelInputShutdownEvent, "
@@ -178,6 +179,7 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
     @Override
     public void channelInactive(ChannelHandlerContext context) throws Exception {
         peerClosed.set(true);
+        signalReadReady();
         if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
             Tr.debug(this, tc, logId()
                                + " channelInactive: queuedBytes=" + queuedBytes.get()
@@ -243,15 +245,22 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
         try {
             readLock.lock();
             try {
-                while (!immediateTimeout.get() && queuedDataSize() == 0 && channel.isActive()) {
+                while (!immediateTimeout.get() && queuedDataSize() == 0 && channel.isActive() && !peerClosed.get()) {
                     if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
                         Tr.debug(this, tc, logId()
                                            + " waitForDataRead: waiting, queuedBytes="
                                            + queuedBytes.get());
                     }
                     requestReadKick();
-                    if (!readCondition.await(waitMillis, TimeUnit.MILLISECONDS))
+                    if(waitMillis <= 0){
+                        readCondition.await();
+                    }
+                    else{
+                       if (!readCondition.await(waitMillis, TimeUnit.MILLISECONDS)){
                         break;
+                       }
+                        
+                    } 
                 }
             } finally {  
                 readLock.unlock();
@@ -365,6 +374,7 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
     @Override
     public void close(ChannelHandlerContext context, ChannelPromise promise) throws Exception {
         peerClosed.set(true);
+        signalReadReady();
         super.close(context, promise);
     }
 

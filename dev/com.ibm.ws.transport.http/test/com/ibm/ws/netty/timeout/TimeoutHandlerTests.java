@@ -12,6 +12,7 @@ package com.ibm.ws.netty.timeout;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -76,15 +77,15 @@ public class TimeoutHandlerTests {
      * Captures the first exception fired through the pipeline.
      */
     static final class ExceptionCatcher extends ChannelInboundHandlerAdapter {
-    final AtomicReference<Throwable> seen = new AtomicReference<>(null);
-    final AtomicInteger count = new AtomicInteger(0);
+        final AtomicReference<Throwable> seen = new AtomicReference<>(null);
+        final AtomicInteger count = new AtomicInteger(0);
 
-    @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        count.incrementAndGet();
-        seen.compareAndSet(null, cause);
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            count.incrementAndGet();
+            seen.compareAndSet(null, cause);
+        }
     }
-}
 
     /**
      * Advance time and run scheduled + normal tasks.
@@ -130,7 +131,7 @@ public class TimeoutHandlerTests {
         }
     }
 
-    public static class ArmReadOpTests {
+    public static class ReadOpTests {
         @Before
         public void setup() {
             TimeoutHandlerTests.commonSetup();
@@ -153,13 +154,6 @@ public class TimeoutHandlerTests {
 
             readOp.close();
             ch.close();
-        }
-    }
-
-    public static class ReadOpCancelTests {
-        @Before
-        public void setup() {
-            TimeoutHandlerTests.commonSetup();
         }
 
         @Test
@@ -195,6 +189,76 @@ public class TimeoutHandlerTests {
 
             ch.close();
         }
+
+        @Test
+        public void triggerReadOpTimeout_firesException_and_setsTimedFlag() {
+            ExceptionCatcher catcher = new ExceptionCatcher();
+            EmbeddedChannel ch = newChannelForReadOp(catcher);
+
+            TimeoutHandler.triggerReadOpTimeout(ch);
+
+            assertTrue("Expected READ_OP_TIMED to be true", TimeoutHandler.readOpTimedOut(ch));
+            assertNotNull("Expected an exception", catcher.seen.get());
+            assertTrue(catcher.seen.get() instanceof ReadTimeoutException);
+            assertEquals(1, catcher.count.get());
+
+            ch.close();
+        }
+
+        @Test
+        public void triggerReadOpTimeout_cancelsPreviouslyArmedFuture_soItDoesNotDoubleFire() {
+            ExceptionCatcher catcher = new ExceptionCatcher();
+            EmbeddedChannel ch = newChannelForReadOp(catcher);
+
+            TimeoutHandler.armReadOp(ch, 100, null);
+            advanceAndRun(ch, 10);
+
+            TimeoutHandler.triggerReadOpTimeout(ch);
+            assertEquals("Expected exactly one exception after trigger", 1, catcher.count.get());
+
+            // Advance past the original 100ms. If the future wasn't cancelled, we'd see a second exception.
+            advanceAndRun(ch, 200);
+            assertEquals("Expected no double-fire after trigger cancels future", 1, catcher.count.get());
+
+            ch.close();
+        }
+
+        @Test
+        public void armReadOp_reArmingCancelsPrevious_onlySecondTimeoutFires() {
+            ExceptionCatcher catcher = new ExceptionCatcher();
+            EmbeddedChannel ch = newChannelForReadOp(catcher);
+
+            TimeoutHandler.ReadOpToken t1 = TimeoutHandler.armReadOp(ch, 100, null);
+            TimeoutHandler.ReadOpToken t2 = TimeoutHandler.armReadOp(ch, 25, null);
+
+            advanceAndRun(ch, 30);
+            assertEquals(1, catcher.count.get());
+            assertTrue(catcher.seen.get() instanceof ReadTimeoutException);
+
+            // Past the first arm; should still only be one exception.
+            advanceAndRun(ch, 200);
+            assertEquals("Expected previous arm to be canceled", 1, catcher.count.get());
+
+            t1.close();
+            t2.close();
+            ch.close();
+        }
+
+        @Test
+        public void armReadOp_withZeroTimeout_doesNothing() {
+            ExceptionCatcher catcher = new ExceptionCatcher();
+            EmbeddedChannel ch = newChannelForReadOp(catcher);
+
+            TimeoutHandler.armReadOp(ch, 0, null);
+
+            advanceAndRun(ch, 50);
+
+            assertFalse(TimeoutHandler.readOpTimedOut(ch));
+            assertNull(catcher.seen.get());
+            assertEquals(0, catcher.count.get());
+
+            ch.close();
+        }
     }
 
     public static class PipelineBehaviorTests {
@@ -204,16 +268,20 @@ public class TimeoutHandlerTests {
         }
 
         @Test
-        public void h2IdleTimeout_firesWhenProtocolIsHttp2() {
-            NettyHttpChannelConfig cfg = config(0, 0, 0, 25, true);
+        public void handlerRemoved_cancelsOutstandingTimeout() {
+            NettyHttpChannelConfig cfg = config(25, 0, 0, 0, true);
 
             ExceptionCatcher catcher = new ExceptionCatcher();
-            EmbeddedChannel ch = newChannelWithTimeoutHandler(cfg, NettyHttpConstants.ProtocolName.HTTP2, catcher);
+            EmbeddedChannel ch = newChannelWithTimeoutHandler(cfg, NettyHttpConstants.ProtocolName.HTTP1, catcher);
 
-            advanceAndRun(ch, 30);
+            // Remove handler before it fires
+            ch.pipeline().remove("timeoutHandler");
 
-            assertNotNull("Expected an exception", catcher.seen.get());
-            assertTrue("Expected H2IdleTimeoutException", catcher.seen.get() instanceof H2IdleTimeoutException);
+            advanceAndRun(ch, 50);
+
+            assertNull("No exception expected after handler removed", catcher.seen.get());
+            assertEquals(0, catcher.count.get());
+            assertTrue("Channel should remain open", ch.isOpen());
 
             ch.close();
         }
@@ -246,7 +314,99 @@ public class TimeoutHandlerTests {
 
             ch.close();
         }
+
+        /**
+         * Note: this test uses reflection to capture the firstRequest flag, which is not a public flag.
+         */
+        @Test
+        public void tcpIdle_nonFirstRequest_firesReadTimeoutException_notClose() throws Exception {
+            NettyHttpChannelConfig cfg = config(25, 25, 0, 0, true);
+
+            ExceptionCatcher catcher = new ExceptionCatcher();
+            EmbeddedChannel ch = newChannelWithTimeoutHandler(cfg, NettyHttpConstants.ProtocolName.HTTP1, catcher);
+
+            TimeoutHandler handler = ch.pipeline().get(TimeoutHandler.class);
+            Field f = TimeoutHandler.class.getDeclaredField("firstRequest");
+            f.setAccessible(true);
+            f.setBoolean(handler, false);
+
+            advanceAndRun(ch, 30);
+
+            assertNotNull(catcher.seen.get());
+            assertTrue(catcher.seen.get() instanceof ReadTimeoutException);
+            assertTrue("Non-first request should not auto-close the channel", ch.isOpen());
+
+            ch.close();
+        }
     }
+
+    public static class H2TimeoutTests {
+    @Before
+    public void setup() {
+        TimeoutHandlerTests.commonSetup();
+    }
+
+    @Test
+    public void forH2Stream_doesNotArmConnectionIdleTimeout() {
+        NettyHttpChannelConfig cfg = config(0, 0, 0, 25, true);
+
+        ExceptionCatcher catcher = new ExceptionCatcher();
+        EmbeddedChannel ch = new EmbeddedChannel();
+        ch.attr(NettyHttpConstants.PROTOCOL).set(NettyHttpConstants.ProtocolName.HTTP2.protocol);
+        ch.pipeline().addLast("timeoutHandler", TimeoutHandler.forH2Stream(cfg));
+        ch.pipeline().addLast("exceptionCatcher", catcher);
+
+        advanceAndRun(ch, 50);
+
+        assertNull("No exception expected for streamOnly handler", catcher.seen.get());
+        assertEquals(0, catcher.count.get());
+
+        ch.close();
+    }
+
+    @Test
+    public void h2Idle_isReArmedOnInboundActivity() {
+        NettyHttpChannelConfig cfg = config(0, 0, 0, 25, true);
+
+        ExceptionCatcher catcher = new ExceptionCatcher();
+        EmbeddedChannel ch = newChannelWithTimeoutHandler(cfg, NettyHttpConstants.ProtocolName.HTTP2, catcher);
+
+        // Almost hit idle…
+        advanceAndRun(ch, 20);
+        assertNull(catcher.seen.get());
+
+        // Any inbound event should re-arm the H2 idle timer
+        ch.writeInbound(new Object());
+        ch.runPendingTasks();
+
+        // If re-armed, we should NOT fire at +10ms from here
+        advanceAndRun(ch, 10);
+        assertNull("Expected timer to be reset by inbound activity", catcher.seen.get());
+
+        // But we SHOULD fire after full idle again
+        advanceAndRun(ch, 20);
+        assertNotNull(catcher.seen.get());
+        assertTrue(catcher.seen.get() instanceof H2IdleTimeoutException);
+
+        ch.close();
+    }
+
+
+        @Test
+        public void h2IdleTimeout_firesWhenProtocolIsHttp2() {
+            NettyHttpChannelConfig cfg = config(0, 0, 0, 25, true);
+
+            ExceptionCatcher catcher = new ExceptionCatcher();
+            EmbeddedChannel ch = newChannelWithTimeoutHandler(cfg, NettyHttpConstants.ProtocolName.HTTP2, catcher);
+
+            advanceAndRun(ch, 30);
+
+            assertNotNull("Expected an exception", catcher.seen.get());
+            assertTrue("Expected H2IdleTimeoutException", catcher.seen.get() instanceof H2IdleTimeoutException);
+
+            ch.close();
+        }
+}
 
     
 }
