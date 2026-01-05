@@ -119,9 +119,6 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
                 });
                 return;
             }
-            if(queuedDataSize() > 0){
-                signalReadReady();
-            }
             super.userEventTriggered(context, event);
         }
     }
