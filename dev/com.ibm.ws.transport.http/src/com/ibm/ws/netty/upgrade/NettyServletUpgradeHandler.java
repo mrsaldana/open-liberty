@@ -25,6 +25,7 @@ import com.ibm.websphere.ras.Tr;
 import com.ibm.websphere.ras.TraceComponent;
 import com.ibm.ws.ffdc.annotation.FFDCIgnore;
 import com.ibm.ws.http.dispatcher.internal.HttpDispatcher;
+import com.ibm.ws.http.netty.NettyHttpConstants;
 import com.ibm.ws.transport.access.TransportConnectionAccess;
 import com.ibm.ws.transport.access.TransportConstants;
 import com.ibm.wsspi.channelfw.VirtualConnection;
@@ -65,7 +66,7 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
     private final ReentrantLock readLock = new ReentrantLock();
     private final Condition readCondition = readLock.newCondition();
 
-    private volatile long minBytesToRead = 0;
+    private volatile long minBytesToRead = 0L;
     private volatile boolean isReadingAsync = false;
 
     private final AtomicInteger waitingThreads = new AtomicInteger(0);
@@ -96,6 +97,14 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
                 Tr.debug(this, tc, "NettyServletUpgradeHandler ChannelInputShutdownEvent kicked off for channel " + channel);
             }
             peerClosed.set(true);
+            signalReadReady();
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " userEventTriggered: ChannelInputShutdownEvent, "
+                                   + "isAsync=" + isReadingAsync
+                                   + " queuedBytes=" + queuedBytes.get()
+                                   + " callback=" + callback);
+            }
 
             if (isReadingAsync && callback != null) {
                 if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
@@ -110,9 +119,6 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
                 });
                 return;
             }
-            if(queuedDataSize() > 0){
-                signalReadReady();
-            }
             super.userEventTriggered(context, event);
         }
     }
@@ -120,33 +126,63 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
         if (message instanceof ByteBuf) {
+            clearReadPending();
             ByteBuf buf = (ByteBuf) message;
             final int n = buf.readableBytes();
-            queue.add(buf.retain());
-            queuedBytes.addAndGet(n);
-            ReferenceCountUtil.release(buf);
+            queue.add(buf);
+            final int total = queuedBytes.addAndGet(n);
 
-            if (isReadingAsync && queuedBytes.get() >= minBytesToRead) {
-                isReadingAsync = false;
-                if (callback != null) {
-                    HttpDispatcher.getExecutorService().execute(() -> {
-                        try {
-                            callback.complete(vc, readContext);
-                        } catch (Exception ignore) {
-                        }
-                    });
-                }
-            } else if (queuedBytes.get() >= minBytesToRead) {
-                signalReadReady();
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " channelRead: bytes=" + n
+                                   + " totalQueued=" + total
+                                   + " isAsync=" + isReadingAsync
+                                   + " waitingThreads=" + waitingThreads.get());
             }
+
+            if (isReadingAsync && total >= minBytesToRead) {
+                isReadingAsync = false;
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                    Tr.debug(this, tc, logId()
+                                       + " channelRead: async threshold satisfied, dispatchAsyncComplete; "
+                                       + "minBytesToRead=" + minBytesToRead);
+                }
+                dispatchAsyncComplete();
+                // if (callback != null) {
+                //     HttpDispatcher.getExecutorService().execute(() -> {
+                //         try {
+                //             callback.complete(vc, readContext);
+                //         } catch (Exception ignore) {
+                //         }
+                //     });
+                // }
+            // } else if (queuedBytes.get() >= minBytesToRead) {
+            //     signalReadReady();
+            // }
+            } else if (!isReadingAsync && waitingThreads.get() > 0 && total > 0) {
+            // Blocking readers are waiting; wake them as soon as *any* data arrives
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " channelRead: waking blocking readers, waitingThreads="
+                                   + waitingThreads.get());
+            }
+            signalReadReady();
+        }
             return;
         }
-        context.fireChannelRead(message);
+        super.channelRead(context, message);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext context) throws Exception {
         peerClosed.set(true);
+        signalReadReady();
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " channelInactive: queuedBytes=" + queuedBytes.get()
+                               + " isAsync=" + isReadingAsync
+                               + " callback=" + callback);
+        }
         if (isReadingAsync && callback != null) {
             isReadingAsync = false;
             ExecutorService executor = HttpDispatcher.getExecutorService();
@@ -183,11 +219,6 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
                 }
             });
         }
-        if (context != null) {
-            context.executor().execute(() -> immediateTimeout.set(false));
-        } else {
-            immediateTimeout.set(false);
-        }
     }
 
     private void signalReadReady() {
@@ -201,20 +232,48 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
 
     public void waitForDataRead(long waitMillis) throws InterruptedException {
         waitingThreads.incrementAndGet();
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " waitForDataRead: enter, waitMillis=" + waitMillis
+                               + " queuedBytes=" + queuedBytes.get()
+                               + " immediateTimeout=" + immediateTimeout.get()
+                               + " peerClosed=" + peerClosed.get());
+        }
         try {
             readLock.lock();
             try {
-                while (!immediateTimeout.get() && queuedDataSize() == 0 && channel.isActive()) {
-                    if (!channel.config().isAutoRead())
-                        channel.eventLoop().execute(channel::read);
-                    if (!readCondition.await(waitMillis, TimeUnit.MILLISECONDS))
+                while (!immediateTimeout.get() && queuedDataSize() == 0 && channel.isActive() && !peerClosed.get()) {
+                    if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                        Tr.debug(this, tc, logId()
+                                           + " waitForDataRead: waiting, queuedBytes="
+                                           + queuedBytes.get());
+                    }
+                    requestReadKick();
+                    if(waitMillis <= 0){
+                        readCondition.await();
+                    }
+                    else{
+                       if (!readCondition.await(waitMillis, TimeUnit.MILLISECONDS)){
                         break;
+                       }
+                        
+                    } 
                 }
-            } finally {
+            } finally {  
                 readLock.unlock();
+                if (immediateTimeout.get()) {
+                    immediateTimeout.set(false);
+                }
             }
         } finally {
-            waitingThreads.decrementAndGet();
+            int left = waitingThreads.decrementAndGet();
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " waitForDataRead: exit, queuedBytes=" + queuedBytes.get()
+                                   + " immediateTimeout=" + immediateTimeout.get()
+                                   + " peerClosed=" + peerClosed.get()
+                                   + " waitingThreads=" + left);
+            }
         }
     }
 
@@ -230,6 +289,14 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
         final WsByteBuffer[] buffers = readContext.getBuffers();
         if (buffers == null || buffers.length == 0 || buffers[0] == null)
             return 0L;
+
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " setToBuffer: starting, queuedBytes=" + queuedBytes.get()
+                               + " readContext=" + readContext
+                               + " buffers=" + java.util.Arrays.toString(buffers));
+        }
+
 
         final AtomicLong written = new AtomicLong(0L);
         final Runnable task = () -> {
@@ -304,16 +371,26 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
     @Override
     public void close(ChannelHandlerContext context, ChannelPromise promise) throws Exception {
         peerClosed.set(true);
+        signalReadReady();
         super.close(context, promise);
     }
 
     @Override
     public void channelReadComplete(ChannelHandlerContext context) throws Exception {
+        clearReadPending();
         if (!context.channel().config().isAutoRead()
-            && !peerClosed.get()
-            && (isReadingAsync || waitingThreads.get() > 0)
-            && queuedDataSize() < minBytesToRead) {
-            context.executor().execute(context.channel()::read);
+            && !peerClosed.get() && context.channel().isActive()) {
+
+            final int dataSize = queuedDataSize();
+            if(isReadingAsync){
+                if(dataSize<minBytesToRead){
+                    requestReadKick();
+                }
+            } else if(waitingThreads.get()>0){
+                if (dataSize==0){
+                    requestReadKick();
+                }
+            }
         }
         super.channelReadComplete(context);
     }
@@ -345,30 +422,111 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
 
     public void setReadListener(TCPReadCompletedCallback cb) {
         this.callback = cb;
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId() + " setReadListener: " + cb);
+        }
     }
 
     public void queueAsyncRead(long minBytesToRead) {
-        this.minBytesToRead = (int) Math.max(1L, minBytesToRead);
+        this.minBytesToRead = (long) Math.max(1L, minBytesToRead);
         this.isReadingAsync = true;
 
-        if (!channel.config().isAutoRead())
-            channel.eventLoop().execute(channel::read);
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " queueAsyncRead: minBytesToRead=" + this.minBytesToRead
+                               + " queuedBytes=" + queuedBytes.get()
+                               + " callback=" + callback);
+        }
+
+        requestReadKick();
 
         final int q = queuedBytes.get();
         if (q >= this.minBytesToRead && callback != null) {
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " queueAsyncRead: data already available, "
+                                   + "q=" + q + " >= " + this.minBytesToRead
+                                   + " -> dispatchAsyncComplete()");
+            }
             this.isReadingAsync = false;
-            HttpDispatcher.getExecutorService().execute(() -> {
-                try {
-                    callback.complete(vc, readContext);
-                } catch (Throwable t) {
-                    try {
-                        callback.error(vc, readContext,
-                                       (t instanceof IOException) ? (IOException) t : new EOFException(String.valueOf(t)));
-                    } catch (Throwable ignore) {
+            dispatchAsyncComplete();
+            // HttpDispatcher.getExecutorService().execute(() -> {
+            //     try {
+            //         callback.complete(vc, readContext);
+            //     } catch (Throwable t) {
+            //         try {
+            //             callback.error(vc, readContext,
+            //                            (t instanceof IOException) ? (IOException) t : new EOFException(String.valueOf(t)));
+            //         } catch (Throwable ignore) {
+            //         }
+            //     }
+            // });
+        }
+    }
+
+    private void dispatchAsyncComplete() {
+        final TCPReadCompletedCallback cb = this.callback;
+        if (cb == null) {
+            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                Tr.debug(this, tc, logId()
+                                   + " dispatchAsyncComplete: no callback set, returning");
+            }
+            return;
+        }
+
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId()
+                               + " dispatchAsyncComplete: queuedBytes=" + queuedBytes.get()
+                               + " readContext=" + readContext
+                               + " callback=" + cb);
+        }
+
+        HttpDispatcher.getExecutorService().execute(() -> {
+            try {
+                if (readContext != null) {
+                    // This copies up to the space in readContext.getBuffers()
+                    // and decrements queuedBytes accordingly.
+                    long copied = setToBuffer();
+                    if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                        Tr.debug(this, tc, "dispatchAsyncComplete copied=" + copied
+                                           + " queuedAfter=" + queuedBytes.get());
                     }
                 }
-            });
+                
+                cb.complete(vc, readContext);
+            } catch (Throwable t) {
+                // Wrap anything into an IOException for the callback.error signature
+                IOException ioe = (t instanceof IOException) ? (IOException) t : new EOFException(String.valueOf(t));
+                try {
+                    cb.error(vc, readContext, ioe);
+                } catch (Throwable ignore) {
+                }
+            }
+        });
+    }
+
+    private void clearReadPending() {
+        AtomicBoolean pending = channel.attr(NettyHttpConstants.READ_PENDING).get();
+        if (pending != null) {
+            pending.set(false);
         }
+    }
+
+    private void requestReadKick() {
+        if (channel.config().isAutoRead()) {
+            return;
+        }
+
+        AtomicBoolean pending = channel.attr(NettyHttpConstants.READ_PENDING).get();
+        if (pending == null) {
+            pending = new AtomicBoolean(false);
+            channel.attr(NettyHttpConstants.READ_PENDING).set(pending);
+        }
+        if (!pending.compareAndSet(false, true)) {
+            return;
+        }
+
+        channel.eventLoop().execute(channel::read);
     }
 
     public boolean peerClosedConnection() {
@@ -381,10 +539,21 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
 
     public void setVC(VirtualConnection vc) {
         this.vc = vc;
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId() + " setVC: " + vc);
+        }
     }
 
     public void setTCPReadContext(TCPReadRequestContext tcpReadContext) {
         this.readContext = tcpReadContext;
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(this, tc, logId() + " setTCPReadContext: " + tcpReadContext);
+        }
+    }
+
+    //remove after debug
+    private String logId() {
+        return "[UpgradeHandler ch=" + channel.id() + " ctx=" + System.identityHashCode(this) + "]";
     }
 
 }

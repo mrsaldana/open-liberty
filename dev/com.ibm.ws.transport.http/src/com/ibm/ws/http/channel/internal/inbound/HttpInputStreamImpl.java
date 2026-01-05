@@ -639,23 +639,36 @@ public class HttpInputStreamImpl extends HttpInputStreamConnectWeb {
             this.buffer.release();
             this.buffer = null;
         }
+
+        long token = queue.signalToken();
+
         while(true){
             ByteBuf fragment = (queue != null) ? queue.poll():null;
             if(fragment == null){
-                if (queue != null && queue.isEos()) {
+                Throwable err = queue.error();
+                if(err != null){
+                    IOException ioe = (err instanceof IOException) ? (IOException) err : new IOException("Error while reading request body", err);
+                    this.error = ioe;
+                    throw ioe;
+                }
+
+                if (queue.isEos()) {
                     this.readChannelComplete = true;
                     if (this.context != null) {
                         ReadFlowHandler.markRequestConsumed(this.context);
                     }
-                    return false; // EOS
+                    return false; 
                 }
-                if (!autoRead && queue != null && queue.wantsInput() && context != null) {
-                    context.channel().read();
+                if (queue.wantsInput() && context != null && context.channel().config().isAutoRead()) {
+                    context.executor().execute(() -> context.channel().read());
                 }
                 try {
-                    Thread.sleep(1);
+                    token = queue.awaitChange(token);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
+                    IOException ioe = new IOException("Interrupted while waiting for request body data", ie);
+                    this.error = ioe;
+                    throw ioe;
                 }
                 continue;
             }
