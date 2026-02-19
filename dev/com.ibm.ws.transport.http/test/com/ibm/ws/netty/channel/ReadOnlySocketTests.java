@@ -143,7 +143,7 @@ public class ReadOnlySocketTests {
         assertUnsupported(() -> socket.close());
         assertUnsupported(() -> socket.connect(local));
         assertUnsupported(() -> socket.connect(local, 1));
-        assertUnsupported(() -> socket.getChannel());
+        Assert.assertNull(socket.getChannel());
         assertUnsupported(() -> socket.getInputStream());
         assertUnsupported(() -> socket.getOOBInline());
         assertUnsupported(() -> socket.getOutputStream());

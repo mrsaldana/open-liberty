@@ -93,11 +93,11 @@ public class ReadOnlySocket extends Socket{
 
     /**
      * Requires downcasting based on active communication library. This would expose mutable
-     * APIs, and therefore is not supported and will result in a {@link UnsupportedOperationException}.
+     * APIs, and therefore is not supported. This method will always return null if invoked.
      */
     @Override
     public SocketChannel getChannel(){
-        throw newUnsupportedOperationException("getChannel()");
+        return null;
     }
 
     /**
