@@ -23,7 +23,7 @@ import com.ibm.ws.http.channel.inputstream.HttpInputStreamObserver;
 import com.ibm.ws.http.channel.internal.HttpChannelConfig;
 import com.ibm.ws.http.channel.internal.HttpMessages;
 import com.ibm.ws.http.netty.message.BodyQueue;
-import com.ibm.ws.http.netty.pipeline.inbound.ReadFlowHandler;
+import com.ibm.ws.http.netty.pipeline.inbound.read.ReadFlowHandler;
 import com.ibm.wsspi.bytebuffer.WsByteBuffer;
 import com.ibm.wsspi.channelfw.ChannelFrameworkFactory;
 import com.ibm.wsspi.http.channel.HttpConstants;
@@ -105,6 +105,7 @@ public class HttpInputStreamImpl extends HttpInputStreamConnectWeb {
     public void nettyConfigureStreaming(BodyQueue queue, ChannelHandlerContext context, String contentEncoding, long contentLength, boolean chunked){
         
         this.context = context;
+        this.autoRead = (context != null) && context.channel().config().isAutoRead();
         
         this.contentEncoding = (contentEncoding == null) ? null: contentEncoding.toLowerCase();
         this.decompressor = new HttpContentDecompressor();
@@ -629,55 +630,81 @@ public class HttpInputStreamImpl extends HttpInputStreamConnectWeb {
     }
 
     private boolean fillFromStreamingNetty() throws IOException{
+        if (queue == null){
+            return false;
+        }
 
-        if(queue==null) return false;
+        if (context != null && context.executor().inEventLoop()){
+            throw new IllegalStateException("Blocking request read on event loop group thread");
+        }
 
-        if(this.buffer != null && this.buffer.hasRemaining()){
+        if (this.buffer != null && this.buffer.hasRemaining()){
             return true;
         }
-        if(this.buffer != null){
+        if (this.buffer != null){
             this.buffer.release();
             this.buffer = null;
         }
+
+        long token = queue.signalToken();
+        boolean readRequested = false;
+
         while(true){
-            ByteBuf fragment = (queue != null) ? queue.poll():null;
-            if(fragment == null){
-                if (queue != null && queue.isEos()) {
+            ByteBuf fragment = queue.poll();
+            if (fragment == null){
+                if (queue.isEos()){
                     this.readChannelComplete = true;
-                    if (this.context != null) {
+                    if (this.context != null){
+                        ReadFlowHandler.setBodyReadWanted(this.context, false);
                         ReadFlowHandler.markRequestConsumed(this.context);
                     }
-                    return false; // EOS
+                    return false;
                 }
-                if (!autoRead && queue != null && queue.wantsInput() && context != null) {
-                    context.channel().read();
+
+                Throwable error = queue.error();
+                if(error != null){
+                    if(error instanceof IOException){
+                        throw (IOException) error;
+                    }
+                    throw new IOException("Error while reading body", error);
                 }
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException ie) {
+
+                if(!readRequested && !autoRead && queue.wantsInput() && context != null){
+                    ReadFlowHandler.setBodyReadWanted(context, true);
+                    readRequested = true;
+                }
+
+                try{
+                    token = queue.awaitChange(token);
+                } catch (InterruptedException ie){
                     Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for request body", ie);
                 }
+
+                //Signal received; run loop again
+                readRequested = false;
                 continue;
             }
+
             try{
                 int len = fragment.readableBytes();
 
                 this.rawBytesRead += len;
                 this.bytesRead = this.rawBytesRead;
-                if (!isChunked && remainingContentLength >= 0) {
+
+                if(!isChunked && remainingContentLength >= 0){
                     remainingContentLength -= len;
-                    if (remainingContentLength <= 0) {
+                    if (remainingContentLength <= 0){
                         this.readChannelComplete = true;
-                        if (this.context != null) {
+                        if (this.context != null){
+                            ReadFlowHandler.setBodyReadWanted(this.context, false);
                             ReadFlowHandler.markRequestConsumed(this.context);
                         }
-                        if (queue != null && !queue.isEos()) {
+                        if(!queue.isEos()){
                             queue.signalEos();
                         }
                     }
                 }
-
-
 
                 WsByteBuffer fragmentSource = ChannelFrameworkFactory.getBufferManager().allocate(len);
                 int position = fragmentSource.position();
@@ -687,7 +714,7 @@ public class HttpInputStreamImpl extends HttpInputStreamConnectWeb {
 
 
                 if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
-                    Tr.debug(tc, "stream.fragment: rawBytes=" + len + ", CE=" + contentEncoding);
+                    Tr.debug(tc, "stream.fragment: rawBytes=" + len + ", content-encoding=" + contentEncoding);
                 }
 
                 //Stream decompression if content-encoding is present
@@ -700,24 +727,28 @@ public class HttpInputStreamImpl extends HttpInputStreamConnectWeb {
                             Tr.debug(tc, "stream.decompress: produced=%d", out != null ? out.remaining() : 0);
                         }
                     }catch(DataFormatException dfe){
-                        if(TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()){
-                            Tr.debug(tc, "Exception during streaming decompress", dfe);
+                        IllegalHttpBodyException exception = new IllegalHttpBodyException(dfe.getMessage());
+                        exception.initCause(dfe);
+                        FFDCFilter.processException(exception, getClass().getName(), "1");
+                        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+                            Tr.debug(tc, "Received exception during decompress; " + dfe);
                         }
-                        throw new IOException("Invalid compressed request body", dfe);
+                        throw exception;
                     }
                 }
                 if(out !=null && out.hasRemaining()){
                     this.buffer = out;
                     this.decodedBytesProduced += this.buffer.remaining();
                     return true;
-                } else{
-                    //No data produced, compression might need more data
-                    continue; //fetch another fragment
                 } 
+                //No data produced, compression might need more data
+                token = queue.signalToken();
+                readRequested = false;
+                continue; //fetch another fragment
+
             } finally {
                 fragment.release();
             }
         }
     }
-
 }

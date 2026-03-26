@@ -33,6 +33,7 @@ import com.ibm.ws.http.netty.pipeline.http2.LibertyNettyALPNHandler;
 import com.ibm.ws.http.netty.pipeline.http2.LibertyUpgradeCodec;
 import com.ibm.ws.http.netty.pipeline.inbound.HttpDispatcherHandler;
 import com.ibm.ws.http.netty.pipeline.inbound.LibertyHttpRequestHandler;
+import com.ibm.ws.http.netty.pipeline.inbound.read.ReadFlowHandler;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -42,6 +43,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.flow.FlowControlHandler;
 import io.netty.handler.codec.http.HttpMessage;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpServerKeepAliveHandler;
@@ -87,6 +89,8 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
     public static final String NETTY_HTTP_SERVER_CODEC = "httpServerCodec";
     public static final String HTTP_SSL_HANDLER_NAME = "sslHandler";
     public static final String HTTP_KEEP_ALIVE_HANDLER_NAME = "httpKeepAlive";
+    public static final String CRLF_VALIDATION_HANDLER = "CRLFValidationHandler";
+    public static final String FLOW_CONTROL_HANDLER_NAME = "flowControlHandler";
     public static final String HTTP_AGGREGATOR_HANDLER_NAME = "objectAggregator";
     public static final String HTTP_REQUEST_HANDLER_NAME = "requestHandler";
     public static final String HTTP2_CLEARTEXT_UPGRADE_HANDLER_NAME = "h2cUpgradeHandler";
@@ -117,8 +121,6 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         FixedRecvByteBufAllocator channelAllocator = new FixedRecvByteBufAllocator(httpConfig.getIncomingBodyBufferSize());
         LoggingRecvByteBufAllocator loggingAllocator = new LoggingRecvByteBufAllocator(channelAllocator, channel);
         channel.config().setRecvByteBufAllocator(loggingAllocator);
-        //we can add a property if we want to config auto read
-        channel.config().setAutoRead(false);
 
         pipeline.addLast(WRITE_TIMEOUT_HANDER_NAME, new WriteTimeoutHandler(httpConfig.getWriteTimeout(), TimeUnit.MILLISECONDS));
 
@@ -229,6 +231,8 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
         pipeline.addLast(HttpDispatcherHandler.NAME, new HttpDispatcherHandler(httpConfig));
         addPreHttpCodecHandlers(pipeline);
         addPreDispatcherHandlers(pipeline, false);
+        // Turn off auto read for HTTP/1.1
+        pipeline.channel().config().setAutoRead(false);
     }
 
     /**
@@ -252,12 +256,46 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
                 }
                 // Turn on half closure for H1
                 ctx.channel().config().setOption(ChannelOption.ALLOW_HALF_CLOSURE, true);
+                // Turn off auto read for H1
+                ctx.channel().config().setAutoRead(false);
 
-                pipeline.addBefore(HttpDispatcherHandler.NAME, HTTP_KEEP_ALIVE_HANDLER_NAME, new HttpServerKeepAliveHandler());
+                TimeoutHandler timeoutHandler = pipeline.get(TimeoutHandler.class);
+                if(timeoutHandler != null){
+                    timeoutHandler.markProtocol(pipeline, ProtocolName.HTTP1);
+                }
+
+                // Remove non-H1 handlers
+                if (pipeline.get("h2cUpgradeHandler") != null) {
+                    pipeline.remove("h2cUpgradeHandler");
+                }
+                if (pipeline.get("HttpServerUpgradeHandler#0") != null) {
+                    pipeline.remove("HttpServerUpgradeHandler#0");
+                }
+                if (pipeline.get("upgradeCheckHandler") != null) {
+                    pipeline.remove("upgradeCheckHandler");
+                }
+
+                // Add H1 handlers
+                
+                
+                if(pipeline.get(ReadFlowHandler.class) == null){
+                    pipeline.addBefore(HttpDispatcherHandler.NAME, ReadFlowHandler.NAME, ReadFlowHandler.INSTANCE);
+                }
+                if(pipeline.get(HttpServerKeepAliveHandler.class) == null){
+                    pipeline.addBefore(ReadFlowHandler.NAME, HTTP_KEEP_ALIVE_HANDLER_NAME, new HttpServerKeepAliveHandler());
+                }
+                if(pipeline.get(FlowControlHandler.class) == null){
+                    pipeline.addBefore(HTTP_KEEP_ALIVE_HANDLER_NAME, FLOW_CONTROL_HANDLER_NAME, new FlowControlHandler());
+                }
+                
                 ctx.channel().attr(NettyHttpConstants.PROTOCOL).set(ProtocolName.HTTP1.name());
-                ctx.pipeline().remove(this);
+      
+
+                Tr.debug(tc, "Pipeline before H1 fallback after no H2C: "+ ctx.pipeline());
 
                 ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
+
+                ctx.channel().read(); // First read out of the flow control handler
 
             }
 
@@ -292,7 +330,18 @@ public class HttpPipelineInitializer extends ChannelInitializerWrapper {
     private void addPreDispatcherHandlers(ChannelPipeline pipeline, boolean isHttp2) {
 
         if (!isHttp2) {
-            pipeline.addAfter(NETTY_HTTP_SERVER_CODEC, HTTP_KEEP_ALIVE_HANDLER_NAME, new HttpServerKeepAliveHandler());
+            
+            if(pipeline.get(FlowControlHandler.class) == null){
+                pipeline.addAfter(NETTY_HTTP_SERVER_CODEC, FLOW_CONTROL_HANDLER_NAME, new FlowControlHandler());
+            }
+
+            if(pipeline.get(HttpServerKeepAliveHandler.class) == null){
+                pipeline.addAfter(FLOW_CONTROL_HANDLER_NAME, HTTP_KEEP_ALIVE_HANDLER_NAME, new HttpServerKeepAliveHandler());
+            }
+            
+            if(pipeline.get(ReadFlowHandler.class) == null) {
+                pipeline.addBefore(HttpDispatcherHandler.NAME, ReadFlowHandler.NAME, ReadFlowHandler.INSTANCE);
+            }
         }
 
         if (pipeline.get(TimeoutHandler.class) == null) {

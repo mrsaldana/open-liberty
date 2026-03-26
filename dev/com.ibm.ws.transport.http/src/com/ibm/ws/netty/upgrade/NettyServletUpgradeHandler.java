@@ -12,6 +12,7 @@ package com.ibm.ws.netty.upgrade;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -77,6 +78,8 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
     private VirtualConnection vc;
     private TCPReadRequestContext readContext;
 
+    private final AtomicBoolean readPending = new AtomicBoolean(false);
+
 
     public NettyServletUpgradeHandler(Channel channel) {
         this.channel = channel;
@@ -128,10 +131,14 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
 
             if (isReadingAsync && queuedBytes.get() >= minBytesToRead) {
                 isReadingAsync = false;
-                if (callback != null) {
+                final TCPReadCompletedCallback cb = callback; 
+                callback = null;
+                Tr.debug(tc, "[UPGRADE-ASYNC] async threshold met; firing callback. bytes=" + queuedBytes.get() + 
+                    " minBytesToRead=" + minBytesToRead);
+                if (cb != null) {
                     HttpDispatcher.getExecutorService().execute(() -> {
                         try {
-                            callback.complete(vc, readContext);
+                            cb.complete(vc, readContext);
                         } catch (Exception ignore) {
                         }
                     });
@@ -199,14 +206,47 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
         }
     }
 
+    public void requestReadIfNeeded(){
+        requestRead();
+    }
+
+    public boolean isReadPending(){
+        return readPending.get();
+    }
+
+    private void requestRead(){
+        Tr.debug(tc, "[UPGRADE-SYSOUT] NettyServletUpgradeHandler.requestRead autoRead="
+            + channel.config().isAutoRead()
+            + " active=" + channel.isActive()
+            + " peerClosed=" + peerClosed.get()
+            + " readPending=" + readPending.get()
+            + " waitingThreads=" + waitingThreads.get()
+            + " isReadingAsync=" + isReadingAsync
+            + " minBytesToRead=" + minBytesToRead
+            + " queuedBytes=" + queuedBytes.get());
+        if(peerClosed.get()){
+            return;
+        }
+        if(channel == null || !channel.isActive()){
+            return;
+        }
+        if(channel.config().isAutoRead()){
+            return;
+        }
+        if(!readPending.compareAndSet(false, true)){
+            return;
+        }
+        channel.eventLoop().execute(channel::read);
+
+    }
+
     public void waitForDataRead(long waitMillis) throws InterruptedException {
         waitingThreads.incrementAndGet();
         try {
             readLock.lock();
             try {
                 while (!immediateTimeout.get() && queuedDataSize() == 0 && channel.isActive()) {
-                    if (!channel.config().isAutoRead())
-                        channel.eventLoop().execute(channel::read);
+                    requestRead();
                     if (!readCondition.await(waitMillis, TimeUnit.MILLISECONDS))
                         break;
                 }
@@ -281,7 +321,7 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
         };
 
         if (context != null && !context.executor().inEventLoop()) {
-            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            final CountDownLatch latch = new CountDownLatch(1);
             context.executor().execute(() -> {
                 try {
                     task.run();
@@ -290,7 +330,7 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
                 }
             });
             try {
-                latch.await(1, java.util.concurrent.TimeUnit.SECONDS);
+                latch.await(250, TimeUnit.MILLISECONDS);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }
@@ -309,11 +349,12 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
 
     @Override
     public void channelReadComplete(ChannelHandlerContext context) throws Exception {
+        readPending.set(false);
         if (!context.channel().config().isAutoRead()
             && !peerClosed.get()
             && (isReadingAsync || waitingThreads.get() > 0)
             && queuedDataSize() < minBytesToRead) {
-            context.executor().execute(context.channel()::read);
+            requestRead();
         }
         super.channelReadComplete(context);
     }
@@ -351,18 +392,26 @@ public class NettyServletUpgradeHandler extends ChannelDuplexHandler {
         this.minBytesToRead = (int) Math.max(1L, minBytesToRead);
         this.isReadingAsync = true;
 
-        if (!channel.config().isAutoRead())
-            channel.eventLoop().execute(channel::read);
+        Tr.debug(tc, "[UPGRADE-ASYNC] queueAsyncRead : " + 
+            "minBytesToRead = " + minBytesToRead + ", " +
+            "queuedBytes = " + queuedBytes.get() + ", " +
+            "autoRead = " + channel.config().isAutoRead() + ", " +
+            "readPending = " + readPending.get() );
+
+        requestRead();
 
         final int q = queuedBytes.get();
         if (q >= this.minBytesToRead && callback != null) {
+            TCPReadCompletedCallback cb = callback;
+            callback = null;
+
             this.isReadingAsync = false;
             HttpDispatcher.getExecutorService().execute(() -> {
                 try {
-                    callback.complete(vc, readContext);
+                    cb.complete(vc, readContext);
                 } catch (Throwable t) {
                     try {
-                        callback.error(vc, readContext,
+                        cb.error(vc, readContext,
                                        (t instanceof IOException) ? (IOException) t : new EOFException(String.valueOf(t)));
                     } catch (Throwable ignore) {
                     }
